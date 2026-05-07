@@ -1,6 +1,6 @@
 # Datachain backend
 
-FastAPI service (Epic 1 scaffold). No database layer yet—that lands in Epic 2.
+FastAPI service for Datachain. Epic 2 adds SQLAlchemy models and Alembic migrations.
 
 ## Prerequisites
 
@@ -30,6 +30,16 @@ pip install -r requirements-dev.txt
 
 Deactivate anytime: `deactivate`
 
+## Environment variables
+
+Create `backend/.env` (or export in your shell) based on `backend/.env.example`.
+
+Required for DB-connected workflows:
+
+```bash
+DATABASE_URL=postgresql+psycopg://datachain:datachain_dev@localhost:5432/datachain
+```
+
 ## Run the API
 
 From `backend/` with the venv activated:
@@ -48,6 +58,21 @@ curl -s http://127.0.0.1:8000/health
 ```
 
 Expected: `{"status":"ok"}`
+
+## Database migrations (Alembic)
+
+From `backend/` with the venv activated:
+
+```bash
+# apply all migrations
+alembic upgrade head
+
+# create a new migration after model changes
+alembic revision --autogenerate -m "describe change"
+
+# rollback one migration
+alembic downgrade -1
+```
 
 ## Lint and format
 

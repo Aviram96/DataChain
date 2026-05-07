@@ -34,12 +34,12 @@ Keep the **Status** column in this table aligned with the repository as work lan
 **Goal**: Persistent relational model for users, cameras, and video records with migrations.
 
 
-| Type | Item                                                                           |
-| ---- | ------------------------------------------------------------------------------ |
-| Task | User schema (SQLAlchemy)                                                       |
-| Task | Camera schema (linked to User)                                                 |
-| Task | VideoRecord schema (IPFS CID, blockchain TxHash, timestamps, camera reference) |
-| Task | Alembic configuration and migration workflow                                   |
+| Type | Item                                                                           | Status |
+| ---- | ------------------------------------------------------------------------------ | ------ |
+| Task | User schema (SQLAlchemy)                                                       | Done — `backend/app/models.py` (`users`) |
+| Task | Camera schema (linked to User)                                                 | Done — `backend/app/models.py` (`cameras.user_id` FK → `users.id`) |
+| Task | VideoRecord schema (IPFS CID, blockchain TxHash, timestamps, camera reference) | Done — `backend/app/models.py` (`video_records.camera_id` FK, `cid`, `tx_hash`, timestamps) |
+| Task | Alembic configuration and migration workflow                                   | Done — `backend/alembic.ini`, `backend/alembic/env.py`, initial migration in `backend/alembic/versions/` |
 
 
 **Exit criteria**: Migrations apply cleanly; models reflect relationships needed for CRUD and the video pipeline.
