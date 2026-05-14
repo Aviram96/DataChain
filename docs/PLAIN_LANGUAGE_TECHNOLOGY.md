@@ -74,6 +74,22 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Where it shows up:** `backend/app/main.py` defines the app; more routes will be added in later epics.
 
+### bcrypt (password hashing)
+
+**What it is:** **bcrypt** is a **password-hashing** algorithm: the system stores a **non-reversible** fingerprint of a password instead of the password itself. Checking a login means hashing the typed password the same way and comparing fingerprints.
+
+**Why Datachain uses it:** Accounts protect cameras and evidence metadata; if the database were copied, **bcrypt** makes recovering original passwords much harder than storing plaintext or a simple hash.
+
+**Where it shows up:** `backend/requirements.txt`; `backend/app/security/password.py` (`hash_password` before saving, `verify_password` for login checks); `backend/app/routers/auth.py` (registration). Optional **`BCRYPT_ROUNDS`** (4–31, default 12) in `backend/.env.example` tunes CPU cost versus brute-force resistance.
+
+### email-validator (with Pydantic `EmailStr`)
+
+**What it is:** **email-validator** is a small library that checks whether a string looks like a **valid email address** (format and basic rules). **Pydantic** (bundled with FastAPI) can use it for the `EmailStr` type on request bodies.
+
+**Why Datachain uses it:** Registration rejects malformed emails **before** hitting the database, which keeps data cleaner and avoids silent bad rows.
+
+**Where it shows up:** `backend/requirements.txt`; `backend/app/schemas/auth.py` (`UserRegister.email`).
+
 ### Uvicorn
 
 **What it is:** **Uvicorn** is an **application server** that listens for network requests and runs the FastAPI application. Think of FastAPI as the **recipe** and Uvicorn as the **kitchen** that serves requests.
@@ -97,6 +113,14 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 **Why Datachain uses it:** Catches issues early (unused imports, undefined names) in a project that will grow in surface area (auth, uploads, chain interactions).
 
 **Where it shows up:** `backend/.flake8` and `backend/README.md`.
+
+### Pytest
+
+**What it is:** **Pytest** is a **test runner** for Python: you write small functions that **assert** expected behavior, and Pytest runs them and reports failures.
+
+**Why Datachain uses it:** Auth, cameras, and pipeline code need **repeatable checks** (for example password hashing and API contracts) so regressions are caught locally and in CI.
+
+**Where it shows up:** `backend/requirements-dev.txt`; tests under `backend/tests/`; `pytest -q` from `backend/` per `backend/README.md`; GitHub Actions backend job runs Pytest after Flake8.
 
 ### Cursor project rules (`.cursor/rules`)
 

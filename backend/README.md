@@ -59,6 +59,18 @@ curl -s http://127.0.0.1:8000/health
 
 Expected: `{"status":"ok"}`
 
+### Register a user (Epic 3, US-3.1)
+
+With Postgres running and migrations applied:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/auth/register \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"you@example.com\",\"password\":\"your-secure-pass\"}"
+```
+
+Expected on success: JSON with `id`, `email`, and `created_at`. Duplicate email returns HTTP **409**.
+
 ## Database migrations (Alembic)
 
 From `backend/` with the venv activated:
@@ -72,6 +84,14 @@ alembic revision --autogenerate -m "describe change"
 
 # rollback one migration
 alembic downgrade -1
+```
+
+## Tests
+
+From `backend/` with dev dependencies installed:
+
+```bash
+pytest -q
 ```
 
 ## Lint and format

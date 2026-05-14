@@ -63,6 +63,8 @@ Keep the **Status** column in this table aligned with the repository as work lan
 
 **Exit criteria**: Registration, login, logout, and protected routes behave per stories; secrets not logged.
 
+**Progress note**: **US-3.1** — `POST /auth/register` accepts email and password, normalizes email, rejects duplicates with HTTP 409, persists a `User` row (UUID model in `backend/app/models/user.py`); responses omit secrets. **US-3.2** — all persisted passwords go through `hash_password` (bcrypt with configurable `BCRYPT_ROUNDS`, default 12); `verify_password` added for upcoming login; unit tests in `backend/tests/test_password.py`. **US-3.3** onward (login/JWT, UI, expiry, logout) not started.
+
 ---
 
 ## Epic 4: Camera Management (CRUD)
