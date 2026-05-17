@@ -1,4 +1,6 @@
 import { getApiBaseUrl, parseApiErrorMessage } from "./api";
+import { authFetch } from "./auth-fetch";
+import { getAccessToken } from "./auth-token";
 
 export type LoginPayload = {
   email: string;
@@ -13,6 +15,12 @@ export type RegisterPayload = {
 export type TokenResponse = {
   access_token: string;
   token_type: string;
+};
+
+export type UserPublic = {
+  id: string;
+  email: string;
+  created_at: string;
 };
 
 export class AuthApiError extends Error {
@@ -58,4 +66,26 @@ export async function register(payload: RegisterPayload): Promise<void> {
     const message = await parseApiErrorMessage(response, fallback);
     throw new AuthApiError(message, response.status);
   }
+}
+
+export async function getCurrentUser(): Promise<UserPublic | null> {
+  if (!getAccessToken()) {
+    return null;
+  }
+
+  const response = await authFetch(`${getApiBaseUrl()}/auth/me`);
+
+  if (response.status === 401) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const message = await parseApiErrorMessage(
+      response,
+      "Could not load your profile.",
+    );
+    throw new AuthApiError(message, response.status);
+  }
+
+  return (await response.json()) as UserPublic;
 }

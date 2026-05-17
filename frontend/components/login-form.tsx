@@ -6,13 +6,14 @@ import { FormEvent, useState } from "react";
 
 import { networkErrorMessage } from "@/lib/api";
 import { AuthApiError, login } from "@/lib/auth-api";
+import { setAccessToken } from "@/lib/auth-token";
 
+import { useAuth } from "./auth-provider";
 import { useToast } from "./toast-provider";
-
-const ACCESS_TOKEN_KEY = "datachain_access_token";
 
 export function LoginForm() {
   const router = useRouter();
+  const { refreshSession } = useAuth();
   const { showToast } = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,7 +25,8 @@ export function LoginForm() {
 
     try {
       const token = await login({ email, password });
-      localStorage.setItem(ACCESS_TOKEN_KEY, token.access_token);
+      setAccessToken(token.access_token);
+      await refreshSession();
       showToast("Signed in successfully.", "success");
       router.push("/");
     } catch (error) {

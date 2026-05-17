@@ -53,9 +53,14 @@ Quick API check: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health) sh
 ## Routes
 
 - `/` — Home
-- `/login` — Sign in (error toast on wrong password)
+- `/login` — Sign in (error toast on wrong password); header updates after sign-in
 - `/register` — Create account (error toast on duplicate email)
+- Header — When signed in: **Signed in as** email + **Log out** (clears `datachain_access_token`); when signed out: Sign in / Register links
 - `/project-status` — Example secondary page
+
+Expired or invalid JWTs clear `datachain_access_token` in localStorage and redirect to `/login` (toast on protected pages). Session is checked on app load via `GET /auth/me` and on any authenticated API call that returns 401.
+
+**Verify auto-logout:** set `JWT_ACCESS_TOKEN_EXPIRE_MINUTES=1` in `backend/.env`, restart the API, sign in, wait past expiry, then navigate or refresh — you should land on `/login` with an expiry toast.
 
 ## Proof (local)
 

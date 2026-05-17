@@ -60,13 +60,13 @@ Keep the **Status** column in this table aligned with the repository as work lan
 | US-3.2 | As the backend, I need to hash passwords with bcrypt before saving.      | Done — `hash_password` / `verify_password` in `backend/app/security/password.py`; optional `BCRYPT_ROUNDS`; tests in `backend/tests/test_password.py` |
 | US-3.3 | As a user, I want to log in and receive a secure JWT.                    | Done — `POST /auth/login`, `GET /auth/me`; JWT (HS256) in `backend/app/security/jwt_tokens.py`; `get_current_user` in `backend/app/deps_auth.py`; `JWT_SECRET_KEY` required at startup |
 | US-3.4 | As a user, I want UI error toasts for wrong password or duplicate email. | Done — `/login` and `/register` in `frontend/`; error toasts on HTTP 401 (login) and 409 (register); `ToastProvider` in `frontend/components/toast-provider.tsx`; API via `frontend/lib/auth-api.ts`; CORS for dev in `backend/app/main.py` |
-| US-3.5 | As the system, I need JWT expiration handling and automatic logout.      | Not started |
-| US-3.6 | As a user, I want to log out securely and clear session state.           | Not started |
+| US-3.5 | As the system, I need JWT expiration handling and automatic logout.      | Done — `frontend/lib/auth-token.ts`, `auth-fetch.ts`, `auth-session.ts`; `AuthSession` on load (`GET /auth/me` + client `exp`); 401 clears token and redirects to `/login` with optional toast |
+| US-3.6 | As a user, I want to log out securely and clear session state.           | Done — `AuthProvider` + `SiteHeader` (`Signed in as …`, Log out); `logout()` clears token and expiry timer; login calls `refreshSession()` for header state |
 
 
 **Exit criteria**: Registration, login, logout, and protected routes behave per stories; secrets not logged.
 
-**Progress note**: **US-3.1–US-3.4** done on branch `epic3` (backend auth + frontend login/register with error toasts). **US-3.5–US-3.6** (client JWT expiry, logout UX) remain.
+**Progress note**: **US-3.1–US-3.6** complete on branch `epic3` (registration, login, JWT expiry handling, logout UX). Epic 3 exit criteria met for auth stories; refresh tokens remain out of scope.
 
 ---
 
