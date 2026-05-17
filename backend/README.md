@@ -40,6 +40,8 @@ Required for DB-connected workflows:
 DATABASE_URL=postgresql+psycopg://datachain:datachain_dev@localhost:5432/datachain
 ```
 
+**JWT (Epic 3):** set **`JWT_SECRET_KEY`** to a long random string (for example `openssl rand -hex 32`). The API process exits on startup if it is missing or blank. Optional: **`JWT_ACCESS_TOKEN_EXPIRE_MINUTES`** (default `60`, capped at one week).
+
 ## Run the API
 
 From `backend/` with the venv activated:
@@ -70,6 +72,25 @@ curl -s -X POST http://127.0.0.1:8000/auth/register \
 ```
 
 Expected on success: JSON with `id`, `email`, and `created_at`. Duplicate email returns HTTP **409**.
+
+### Log in and call a protected route (Epic 3, US-3.3)
+
+Set **`JWT_SECRET_KEY`** in your environment (see `backend/.env.example`); the app refuses to start without it.
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"you@example.com\",\"password\":\"your-secure-pass\"}"
+```
+
+Expected on success: `{"access_token":"...","token_type":"bearer"}`. Wrong email or password returns HTTP **401** with the same error message (no user enumeration).
+
+```bash
+curl -s http://127.0.0.1:8000/auth/me \
+  -H "Authorization: Bearer <paste_access_token_here>"
+```
+
+Expected on success: same shape as register response (`id`, `email`, `created_at`). Missing or invalid token returns HTTP **401**.
 
 ## Database migrations (Alembic)
 

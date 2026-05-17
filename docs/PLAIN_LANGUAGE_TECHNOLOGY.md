@@ -80,7 +80,15 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** Accounts protect cameras and evidence metadata; if the database were copied, **bcrypt** makes recovering original passwords much harder than storing plaintext or a simple hash.
 
-**Where it shows up:** `backend/requirements.txt`; `backend/app/security/password.py` (`hash_password` before saving, `verify_password` for login checks); `backend/app/routers/auth.py` (registration). Optional **`BCRYPT_ROUNDS`** (4–31, default 12) in `backend/.env.example` tunes CPU cost versus brute-force resistance.
+**Where it shows up:** `backend/requirements.txt`; `backend/app/security/password.py` (`hash_password` before saving, `verify_password` for login checks); `backend/app/routers/auth.py` (registration and login). Optional **`BCRYPT_ROUNDS`** (4–31, default 12) in `backend/.env.example` tunes CPU cost versus brute-force resistance.
+
+### JSON Web Tokens (JWT) and PyJWT
+
+**What it is:** A **JSON Web Token (JWT)** is a compact, signed string the server gives the client after login. The client sends it on later requests (often in an **`Authorization: Bearer …`** header). The server **verifies the signature** and reads fields such as **who the user is** and **when the token expires**, without storing every session row for each tab.
+
+**Why Datachain uses it:** **Stateless API authentication** fits the FastAPI service: each request proves identity for dashboards and future camera APIs. Tokens must stay off logs and be handled carefully on the client (expiry and logout are covered in later stories).
+
+**Where it shows up:** `backend/requirements.txt` (**PyJWT**); `backend/app/security/jwt_tokens.py`; `backend/app/deps_auth.py` (`get_current_user`); `backend/app/routers/auth.py` (`/auth/login`, `/auth/me`); **`JWT_SECRET_KEY`** and optional lifetime in `backend/.env.example` and `backend/app/config.py`.
 
 ### email-validator (with Pydantic `EmailStr`)
 

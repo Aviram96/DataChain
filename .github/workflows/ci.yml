@@ -45,6 +45,8 @@ jobs:
   backend:
     name: Backend (Black, Flake8, Pytest)
     runs-on: ubuntu-latest
+    env:
+      JWT_SECRET_KEY: ci-jwt-secret-not-for-production-use-min-32chars
     defaults:
       run:
         working-directory: backend
