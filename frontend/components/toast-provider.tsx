@@ -50,7 +50,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
       window.setTimeout(() => dismiss(id), DISMISS_MS);
     },
-    [dismiss],
+    [dismiss]
   );
 
   const value = useMemo(() => ({ showToast }), [showToast]);

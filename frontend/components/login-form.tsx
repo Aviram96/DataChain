@@ -83,7 +83,10 @@ export function LoginForm() {
       </button>
       <p className="text-center text-sm text-slate-400">
         No account?{" "}
-        <Link href="/register" className="text-emerald-400 hover:text-emerald-300">
+        <Link
+          href="/register"
+          className="text-emerald-400 hover:text-emerald-300"
+        >
           Register
         </Link>
       </p>

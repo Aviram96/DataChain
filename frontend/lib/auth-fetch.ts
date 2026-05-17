@@ -7,7 +7,7 @@ const DEFAULT_SESSION_MESSAGE =
 
 export async function authFetch(
   input: RequestInfo | URL,
-  init?: RequestInit,
+  init?: RequestInit
 ): Promise<Response> {
   const token = getAccessToken();
   const headers = new Headers(init?.headers);
@@ -18,7 +18,10 @@ export async function authFetch(
   const response = await fetch(input, { ...init, headers });
 
   if (response.status === 401 && token) {
-    const message = await parseApiErrorMessage(response, DEFAULT_SESSION_MESSAGE);
+    const message = await parseApiErrorMessage(
+      response,
+      DEFAULT_SESSION_MESSAGE
+    );
     clearSessionAndRedirect({ message });
   }
 

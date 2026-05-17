@@ -18,8 +18,7 @@ export function SiteHeader() {
         {isLoading ? null : user ? (
           <>
             <span className="text-slate-400" title={user.email}>
-              Signed in as{" "}
-              <span className="text-slate-200">{user.email}</span>
+              Signed in as <span className="text-slate-200">{user.email}</span>
             </span>
             <button
               type="button"

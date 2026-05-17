@@ -21,4 +21,3 @@ def get_database_url() -> str:
 
 class Base(DeclarativeBase):
     """Base class for SQLAlchemy declarative models."""
-

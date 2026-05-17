@@ -26,7 +26,7 @@ export type UserPublic = {
 export class AuthApiError extends Error {
   constructor(
     message: string,
-    readonly status: number,
+    readonly status: number
   ) {
     super(message);
     this.name = "AuthApiError";
@@ -43,7 +43,7 @@ export async function login(payload: LoginPayload): Promise<TokenResponse> {
   if (!response.ok) {
     const message = await parseApiErrorMessage(
       response,
-      "Incorrect email or password.",
+      "Incorrect email or password."
     );
     throw new AuthApiError(message, response.status);
   }
@@ -82,7 +82,7 @@ export async function getCurrentUser(): Promise<UserPublic | null> {
   if (!response.ok) {
     const message = await parseApiErrorMessage(
       response,
-      "Could not load your profile.",
+      "Could not load your profile."
     );
     throw new AuthApiError(message, response.status);
   }

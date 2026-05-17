@@ -70,4 +70,3 @@ class VideoRecord(Base):
     )
 
     camera: Mapped["Camera"] = relationship(back_populates="video_records")
-

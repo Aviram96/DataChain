@@ -68,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearSessionAndRedirect({ message: SESSION_EXPIRED_MESSAGE });
       }, delay);
     },
-    [clearExpiryTimer],
+    [clearExpiryTimer]
   );
 
   const refreshSession = useCallback(async () => {
@@ -116,12 +116,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({ user, isLoading, refreshSession, logout }),
-    [user, isLoading, refreshSession, logout],
+    [user, isLoading, refreshSession, logout]
   );
 
-  return (
-    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {

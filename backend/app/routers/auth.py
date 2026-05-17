@@ -53,9 +53,7 @@ def register(payload: UserRegister, db: Session = Depends(get_db)) -> User:
 @router.post("/login", response_model=TokenResponse)
 def login(payload: UserLogin, db: Session = Depends(get_db)) -> TokenResponse:
     email_norm = str(payload.email).lower()
-    user = db.execute(
-        select(User).where(User.email == email_norm)
-    ).scalar_one_or_none()
+    user = db.execute(select(User).where(User.email == email_norm)).scalar_one_or_none()
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

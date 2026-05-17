@@ -5,20 +5,18 @@ const PUBLIC_AUTH_PATHS = ["/login", "/register"];
 let sessionExpiredHandler: ((message: string) => void) | null = null;
 
 export function registerSessionExpiredHandler(
-  handler: ((message: string) => void) | null,
+  handler: ((message: string) => void) | null
 ): void {
   sessionExpiredHandler = handler;
 }
 
 function isPublicAuthPath(pathname: string): boolean {
   return PUBLIC_AUTH_PATHS.some(
-    (path) => pathname === path || pathname.startsWith(`${path}/`),
+    (path) => pathname === path || pathname.startsWith(`${path}/`)
   );
 }
 
-export function clearSessionAndRedirect(options?: {
-  message?: string;
-}): void {
+export function clearSessionAndRedirect(options?: { message?: string }): void {
   clearAccessToken();
 
   if (typeof window === "undefined") {
