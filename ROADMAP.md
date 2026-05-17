@@ -51,19 +51,22 @@ Keep the **Status** column in this table aligned with the repository as work lan
 **Goal**: Secure account lifecycle and API access with JWT.
 
 
-| Story  | Description                                                              |
-| ------ | ------------------------------------------------------------------------ |
-| US-3.1 | As a user, I want to register with email and password.                   |
-| US-3.2 | As the backend, I need to hash passwords with bcrypt before saving.      |
-| US-3.3 | As a user, I want to log in and receive a secure JWT.                    |
-| US-3.4 | As a user, I want UI error toasts for wrong password or duplicate email. |
-| US-3.5 | As the system, I need JWT expiration handling and automatic logout.      |
-| US-3.6 | As a user, I want to log out securely and clear session state.           |
+Keep the **Status** column in this table aligned with the repository as work lands (see **Documentation updates** in `AGENTS.md`).
+
+
+| Story  | Description                                                              | Status |
+| ------ | ------------------------------------------------------------------------ | ------ |
+| US-3.1 | As a user, I want to register with email and password.                   | Done — `POST /auth/register` in `backend/app/routers/auth.py`; email normalized; HTTP 409 on duplicate; `User` in `backend/app/models/user.py`; responses omit secrets |
+| US-3.2 | As the backend, I need to hash passwords with bcrypt before saving.      | Done — `hash_password` / `verify_password` in `backend/app/security/password.py`; optional `BCRYPT_ROUNDS`; tests in `backend/tests/test_password.py` |
+| US-3.3 | As a user, I want to log in and receive a secure JWT.                    | Done — `POST /auth/login`, `GET /auth/me`; JWT (HS256) in `backend/app/security/jwt_tokens.py`; `get_current_user` in `backend/app/deps_auth.py`; `JWT_SECRET_KEY` required at startup |
+| US-3.4 | As a user, I want UI error toasts for wrong password or duplicate email. | Done — `/login` and `/register` in `frontend/`; error toasts on HTTP 401 (login) and 409 (register); `ToastProvider` in `frontend/components/toast-provider.tsx`; API via `frontend/lib/auth-api.ts`; CORS for dev in `backend/app/main.py` |
+| US-3.5 | As the system, I need JWT expiration handling and automatic logout.      | Not started |
+| US-3.6 | As a user, I want to log out securely and clear session state.           | Not started |
 
 
 **Exit criteria**: Registration, login, logout, and protected routes behave per stories; secrets not logged.
 
-**Progress note**: **US-3.1** — `POST /auth/register` accepts email and password, normalizes email, rejects duplicates with HTTP 409, persists a `User` row (UUID model in `backend/app/models/user.py`); responses omit secrets. **US-3.2** — all persisted passwords go through `hash_password` (bcrypt with configurable `BCRYPT_ROUNDS`, default 12); `verify_password` added for upcoming login; unit tests in `backend/tests/test_password.py`. **US-3.3** — `POST /auth/login` returns a bearer **JWT** (HS256, `sub` = user id); `GET /auth/me` is protected via `Authorization: Bearer`; `JWT_SECRET_KEY` required at startup; helpers in `backend/app/security/jwt_tokens.py` and tests in `backend/tests/test_jwt_tokens.py`. **US-3.4** onward (UI toasts, client-side expiry/logout flows) not started.
+**Progress note**: **US-3.1–US-3.4** done on branch `epic3` (backend auth + frontend login/register with error toasts). **US-3.5–US-3.6** (client JWT expiry, logout UX) remain.
 
 ---
 

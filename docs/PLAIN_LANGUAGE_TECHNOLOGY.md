@@ -72,7 +72,7 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** We need a **production-style API** for auth, cameras, video metadata, and pipeline control; FastAPI matches the stack described in the roadmap and pairs well with **async** operations for I/O-bound work (uploads, RPC calls) later.
 
-**Where it shows up:** `backend/app/main.py` defines the app; more routes will be added in later epics.
+**Where it shows up:** `backend/app/main.py` defines the app and auth routes; **CORS** middleware allows the Next.js dev server to call the API from the browser (see `CORS_ORIGINS` in `backend/.env.example`).
 
 ### bcrypt (password hashing)
 

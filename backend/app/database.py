@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
+from dotenv import load_dotenv
 from sqlalchemy.orm import DeclarativeBase
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 
 def get_database_url() -> str:

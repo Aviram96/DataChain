@@ -42,6 +42,8 @@ DATABASE_URL=postgresql+psycopg://datachain:datachain_dev@localhost:5432/datacha
 
 **JWT (Epic 3):** set **`JWT_SECRET_KEY`** to a long random string (for example `openssl rand -hex 32`). The API process exits on startup if it is missing or blank. Optional: **`JWT_ACCESS_TOKEN_EXPIRE_MINUTES`** (default `60`, capped at one week).
 
+**CORS (Epic 3 frontend):** optional **`CORS_ORIGINS`** comma-separated list (default `http://127.0.0.1:3000,http://localhost:3000`) so the Next.js app can call the API from the browser.
+
 ## Run the API
 
 From `backend/` with the venv activated:
