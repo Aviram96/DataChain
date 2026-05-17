@@ -43,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const { showToast } = useToast();
   const [user, setUser] = useState<UserPublic | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const expiryTimerRef = useRef<ReturnType<typeof window.setTimeout>>();
+  const expiryTimerRef = useRef<number | undefined>(undefined);
 
   const clearExpiryTimer = useCallback(() => {
     if (expiryTimerRef.current !== undefined) {

@@ -13,7 +13,10 @@ ALGORITHM = "HS256"
 
 
 def create_access_token(subject_user_id: str) -> str:
-    """Encode a short-lived access token. ``subject_user_id`` is the user's UUID string."""
+    """Encode a short-lived access token.
+
+    ``subject_user_id`` is the user's UUID string.
+    """
     now = datetime.now(timezone.utc)
     expire = now + timedelta(minutes=get_jwt_access_token_expire_minutes())
     payload: dict[str, Any] = {

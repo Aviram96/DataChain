@@ -9,7 +9,8 @@ def get_jwt_secret() -> str:
     key = os.getenv("JWT_SECRET_KEY", "").strip()
     if not key:
         raise RuntimeError(
-            "JWT_SECRET_KEY is not set. Set it in the environment (see backend/.env.example)."
+            "JWT_SECRET_KEY is not set. Set it in the environment "
+            "(see backend/.env.example)."
         )
     return key
 
