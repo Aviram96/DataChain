@@ -18,10 +18,10 @@ export default function NewCameraPage() {
       <div className="space-y-6">
         <div>
           <Link
-            href="/"
+            href="/cameras"
             className="text-sm text-slate-400 hover:text-slate-200"
           >
-            ← Home
+            ← Cameras
           </Link>
           <h1 className="mt-2 text-2xl font-semibold text-white">Add camera</h1>
           <p className="mt-1 text-sm text-slate-400">
@@ -30,12 +30,12 @@ export default function NewCameraPage() {
         </div>
         <CameraForm
           submitLabel="Add camera"
-          onCancel={() => router.push("/")}
+          onCancel={() => router.push("/cameras")}
           onSubmit={async (payload) => {
             try {
               await createCamera(payload);
               showToast("Camera added.", "success");
-              router.push("/");
+              router.push("/cameras");
             } catch (error) {
               if (error instanceof CamerasApiError) {
                 showToast(error.message, "error");

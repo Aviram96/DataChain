@@ -15,6 +15,14 @@ export type CameraPublic = {
   created_at: string;
 };
 
+export type CameraListResponse = {
+  items: CameraPublic[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+};
+
 export class CamerasApiError extends Error {
   constructor(
     message: string,
@@ -23,6 +31,29 @@ export class CamerasApiError extends Error {
     super(message);
     this.name = "CamerasApiError";
   }
+}
+
+export async function listCameras(
+  page = 1,
+  pageSize = 10
+): Promise<CameraListResponse> {
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+  });
+  const response = await authFetch(
+    `${getApiBaseUrl()}/cameras?${params.toString()}`
+  );
+
+  if (!response.ok) {
+    const message = await parseApiErrorMessage(
+      response,
+      "Could not load cameras."
+    );
+    throw new CamerasApiError(message, response.status);
+  }
+
+  return (await response.json()) as CameraListResponse;
 }
 
 export async function createCamera(

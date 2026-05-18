@@ -17,6 +17,9 @@ export function SiteHeader() {
         </Link>
         {isLoading ? null : user ? (
           <>
+            <Link href="/cameras" className={navLinkClass}>
+              Cameras
+            </Link>
             <Link href="/cameras/new" className={navLinkClass}>
               Add camera
             </Link>
