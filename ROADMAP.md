@@ -77,7 +77,7 @@ Keep the **Status** column in this table aligned with the repository as work lan
 
 | Story  | Description                                                            | Status |
 | ------ | ---------------------------------------------------------------------- | ------ |
-| US-4.1 | As a user, I want a form to add a camera (Name, IP/URL, Location).     | |
+| US-4.1 | As a user, I want a form to add a camera (Name, IP/URL, Location).     | Done — `/cameras/new`, `CameraForm` in `frontend/components/camera-form.tsx`, `createCamera` in `frontend/lib/cameras-api.ts`; JWT via `authFetch`; `RequireAuth` redirects guests to `/login` |
 | US-4.2 | As an API, I need to validate and persist camera data to PostgreSQL.   | Done — `Camera` in `backend/app/models/camera.py`; owner-scoped `POST/GET/PATCH/DELETE /cameras` in `backend/app/routers/cameras.py`; validation in `backend/app/schemas/camera.py`; tests in `backend/tests/test_cameras_api.py` |
 | US-4.3 | As a user, I want a dashboard grid of all my cameras.                  | |
 | US-4.4 | As a user, I want to edit an existing camera.                          | |
@@ -88,7 +88,7 @@ Keep the **Status** column in this table aligned with the repository as work lan
 
 **Exit criteria**: Full CRUD via API + UI; pagination and status indicators implemented per agreed rules (e.g., ping vs last-seen).
 
-**Progress note**: **US-4.2** complete on branch `epic4` (backend API only). `GET /cameras` supports `page` / `page_size` (default 10) for later UI pagination (US-4.7); online/offline (US-4.6) not implemented yet.
+**Progress note**: **US-4.1** and **US-4.2** complete on branch `epic4`. Add-camera UI posts to `POST /cameras`; camera list/dashboard (US-4.3+) not implemented yet. `GET /cameras` supports `page` / `page_size` (default 10) for later UI pagination (US-4.7); online/offline (US-4.6) not implemented yet.
 
 ---
 

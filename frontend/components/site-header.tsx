@@ -17,6 +17,9 @@ export function SiteHeader() {
         </Link>
         {isLoading ? null : user ? (
           <>
+            <Link href="/cameras/new" className={navLinkClass}>
+              Add camera
+            </Link>
             <span className="text-slate-400" title={user.email}>
               Signed in as <span className="text-slate-200">{user.email}</span>
             </span>
