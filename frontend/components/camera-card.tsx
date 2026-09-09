@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { useState } from "react";
 
-import type { CameraPublic, CameraStatus } from "@/lib/cameras-api";
+import {
+  ingestFailedMessage,
+  type CameraPublic,
+  type CameraStatus,
+} from "@/lib/cameras-api";
 import { ui } from "@/lib/ui";
 
 type CameraCardProps = {
@@ -25,6 +29,8 @@ export function CameraCard({ camera, onDelete }: CameraCardProps) {
     }
   }
 
+  const ingestFailed = ingestFailedMessage(camera);
+
   return (
     <article className={ui.panel}>
       <div className="flex items-start justify-between gap-2">
@@ -38,6 +44,7 @@ export function CameraCard({ camera, onDelete }: CameraCardProps) {
             </Link>
           </h2>
           <StatusBadge status={camera.status} />
+          {ingestFailed ? <p className={ui.hint}>{ingestFailed}</p> : null}
         </div>
         <div className="flex shrink-0 flex-wrap justify-end gap-3 text-sm">
           <Link href={`/cameras/${camera.id}`} className={ui.link}>

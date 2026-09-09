@@ -129,12 +129,12 @@ Resolved 2026-07-21:
 
 ### Client stories
 
-_(Mostly invisible to the user; continuity and offline status after capture failures surface via Slice B status.)_
+_(Continuity is mostly invisible; after repeated capture failures the dashboard explains why the camera is offline.)_
 
 
 | ID | Story | Status |
 | -- | ----- | ------ |
-| CP-C.C1 | As a user, I want recording to continue reliably when capture fails briefly, and I want the camera marked offline after repeated failures, so I understand when footage may be missing. | TBD |
+| CP-C.C1 | As a user, I want recording to continue reliably when capture fails briefly, and I want the camera marked offline after repeated failures, so I understand when footage may be missing. | Implemented — brief FFmpeg restarts keep recording without flipping the badge; after the restart cap, `offline_reason` is `ingest_failed` (vs `unreachable`); `ingest_offline_at` is returned so the card and detail can say when capture stopped |
 
 
 ### Programmer stories
@@ -156,7 +156,7 @@ _(Mostly invisible to the user; continuity and offline status after capture fail
 
 - **CP-C.P1** uses the existing local-file simulator as the Slice C hardware-free entry point (not live RTSP). Run from `backend/`: `python scripts/simulate_cctv_feed.py --source path/to/sample.mp4` (or `CCTV_SOURCE_MP4`). See `backend/README.md`.
 - **CP-C.P2–P8** attach FFmpeg to each active camera’s `stream_url` and split it into 1-minute `.mp4` files named `{camera_id}_{start}Z.mp4` under `backend/temp/<camera-id>/`. Each closed file is integrity-checked (complete MP4, video stream, SHA-256) before later processing; failures stay in `temp/` and are not handed on. Passing files **remain staged under `temp/` until processing succeeds**. Temp files are **deleted only after processing succeeds**; processing failures stay on disk and are retried. If FFmpeg stops unexpectedly, ingest **restarts** it (default cap 10, logged with camera id) and **marks the camera offline** after the cap (`ingest_offline_at`; apply Alembic `20260824_000003`). IPFS / chain / DB is still a stub, so camera ingest does not delete on staging-only success. Run from `backend/`: `python scripts/ingest_camera.py --camera-id UUID` or `--all`. Parse start/end with `app.services.segment_identity.parse_segment_path`.
-- Remaining Slice C stories (C1) are still TBD.
+- **CP-C.C1** — Brief capture failures restart FFmpeg without changing Online/Offline. After the restart cap, list and detail include `offline_reason`: `ingest_failed` when ingest gave up, `unreachable` when the live stream probe fails, or `null` when online. They also include `ingest_offline_at` (ISO timestamp when ingest gave up, else `null`). The camera card and camera detail keep the Online/Offline badge and, for `ingest_failed`, tell the user capture stopped after repeated failures (**since** that time) and footage for that period may be missing.
 
 
 ---
@@ -278,3 +278,5 @@ Add here only if the teacher requires them in the client–programmer pack.
 | 2026-08-24 | Slice C CP-C.P6 Implemented: camera ingest stages segments under `temp/<camera-id>/` until processing succeeds. |
 | 2026-08-24 | Slice C CP-C.P7 Implemented: delete temp files only after processing succeeds; keep failures for retry. |
 | 2026-08-24 | Slice C CP-C.P8 Implemented: capped FFmpeg restart on unexpected stop; mark camera offline after the cap. |
+| 2026-09-09 | Slice C CP-C.C1 Implemented: `offline_reason` (`ingest_failed` vs `unreachable`); camera card and detail copy when capture stopped after the restart cap. Slice C complete. |
+| 2026-09-09 | CP-C.C1 follow-up: API returns `ingest_offline_at`; camera card and detail include **since …** when capture stopped. |

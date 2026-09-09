@@ -21,6 +21,7 @@ from app.services.camera_ingest import (
     CameraIngestConfig,
     build_ffmpeg_receive_command,
     camera_chunk_dir,
+    camera_offline_reason,
     chunker_config_for_ingest,
     clear_ingest_offline,
     effective_camera_status,
@@ -150,6 +151,17 @@ def test_effective_camera_status_uses_ingest_offline(db_session: Session) -> Non
     assert effective_camera_status(live, "online") == "online"
     live.ingest_offline_at = datetime.now(timezone.utc)
     assert effective_camera_status(live, "online") == "offline"
+
+
+def test_camera_offline_reason_distinguishes_ingest_vs_probe(
+    db_session: Session,
+) -> None:
+    _user, live, _http = _user_with_cameras(db_session)
+    assert camera_offline_reason(live, "online") is None
+    assert camera_offline_reason(live, "offline") == "unreachable"
+    live.ingest_offline_at = datetime.now(timezone.utc)
+    assert camera_offline_reason(live, "online") == "ingest_failed"
+    assert camera_offline_reason(live, "offline") == "ingest_failed"
 
 
 def test_mark_and_clear_ingest_offline(db_session: Session) -> None:

@@ -101,6 +101,8 @@ def test_camera_crud_owner_scoped(client: TestClient) -> None:
     assert body["name"] == "Front door"
     assert body["location"] == "Lobby"
     assert body["status"] == "offline"
+    assert body["offline_reason"] == "unreachable"
+    assert body["ingest_offline_at"] is None
 
     other_list = client.get("/cameras", headers=_auth_headers(token_b))
     assert other_list.status_code == 200
@@ -111,6 +113,8 @@ def test_camera_crud_owner_scoped(client: TestClient) -> None:
     listed_body = listed.json()
     assert listed_body["total"] == 1
     assert listed_body["items"][0]["status"] == "offline"
+    assert listed_body["items"][0]["offline_reason"] == "unreachable"
+    assert listed_body["items"][0]["ingest_offline_at"] is None
 
     get_one = client.get(
         f"/cameras/{camera_id}",
@@ -314,17 +318,29 @@ def test_ingest_offline_overrides_live_probe(
     assert created.status_code == 201
     camera_id = created.json()["id"]
     assert created.json()["status"] == "online"
+    assert created.json()["offline_reason"] is None
+    assert created.json()["ingest_offline_at"] is None
 
     camera = db_session.get(Camera, UUID(camera_id))
     assert camera is not None
-    camera.ingest_offline_at = datetime.now(timezone.utc)
+    marked_at = datetime.now(timezone.utc)
+    camera.ingest_offline_at = marked_at
     db_session.commit()
 
     detail = client.get(f"/cameras/{camera_id}", headers=headers)
     assert detail.status_code == 200
     assert detail.json()["status"] == "offline"
+    assert detail.json()["offline_reason"] == "ingest_failed"
+    raw_offline_at = detail.json()["ingest_offline_at"]
+    assert raw_offline_at
+    returned_at = datetime.fromisoformat(str(raw_offline_at).replace("Z", "+00:00"))
+    if returned_at.tzinfo is None:
+        returned_at = returned_at.replace(tzinfo=timezone.utc)
+    assert abs((returned_at - marked_at).total_seconds()) < 1
 
     listed = client.get("/cameras?status=offline", headers=headers)
     assert listed.status_code == 200
     assert listed.json()["total"] == 1
+    assert listed.json()["items"][0]["offline_reason"] == "ingest_failed"
+    assert listed.json()["items"][0]["ingest_offline_at"] is not None
 

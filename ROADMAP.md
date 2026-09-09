@@ -236,14 +236,14 @@ Epics **1–10** above remain historical delivery notes for the original roadmap
 | ----- | ----- | ------ |
 | A | Register and Login | Done — all CP-A stories Implemented (see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`) |
 | B | Camera dashboard management | Done — all CP-B stories Implemented (search/filter/sort, soft delete, unique names, detail page) |
-| C | Video processing pipeline | In progress — CP-C.P1–P8 Implemented; C1 TBD |
+| C | Video processing pipeline | Done — CP-C.P1–P8 and CP-C.C1 Implemented |
 | D | IPFS storage and blockchain anchoring | Not started — all stories TBD |
 | E | Video management and verification | Not started — all stories TBD |
 
 
 **Exit criteria**: Every story in `docs/CLIENT_PROGRAMMER_USER_STORIES.md` is Implemented, Deferred (with reason), or explicitly Declined; open decisions in that file are resolved.
 
-**Progress note**: Slice A complete 2026-07-21 (including landing refinement: toolbar-free home, problem/solution, signed-in → `/cameras`). Slice B complete 2026-07-21 — apply Alembic revision `20260721_000002` for `deleted_at` + unique active name. Slice C started 2026-08-24 — **CP-C.P1–P8** (simulate feed, receive stream, 1-minute chunks, camera+time filenames, pre-stage integrity check, stage under `temp/` until processing succeeds, delete temp files only after processing success, capped FFmpeg restart + ingest offline); apply Alembic `20260824_000003` for `ingest_offline_at`; see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`.
+**Progress note**: Slice A complete 2026-07-21 (including landing refinement: toolbar-free home, problem/solution, signed-in → `/cameras`). Slice B complete 2026-07-21 — apply Alembic revision `20260721_000002` for `deleted_at` + unique active name. Slice C complete 2026-09-09 — **CP-C.P1–P8** (simulate feed, receive stream, 1-minute chunks, camera+time filenames, pre-stage integrity check, stage under `temp/` until processing succeeds, delete temp files only after processing success, capped FFmpeg restart + ingest offline) and **CP-C.C1** (`offline_reason` `ingest_failed` vs `unreachable`; `ingest_offline_at` on the API so the card/detail can say **since** capture stopped); apply Alembic `20260824_000003` for `ingest_offline_at`; see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`.
 
 ---
 

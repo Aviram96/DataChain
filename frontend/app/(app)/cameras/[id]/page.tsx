@@ -11,6 +11,7 @@ import {
   CamerasApiError,
   deleteCamera,
   getCamera,
+  ingestFailedMessage,
   type CameraPublic,
 } from "@/lib/cameras-api";
 import { ui } from "@/lib/ui";
@@ -88,6 +89,7 @@ function CameraDetailContent() {
   }
 
   const online = camera.status === "online";
+  const ingestFailed = ingestFailedMessage(camera);
 
   return (
     <div className="space-y-6">
@@ -101,6 +103,7 @@ function CameraDetailContent() {
             <span className={online ? ui.badgeOnline : ui.badgeOffline}>
               {online ? "Online" : "Offline"}
             </span>
+            {ingestFailed ? <p className={ui.muted}>{ingestFailed}</p> : null}
           </div>
           <div className="flex flex-wrap gap-3">
             <Link href={`/cameras/${camera.id}/edit`} className={ui.btnSecondary}>

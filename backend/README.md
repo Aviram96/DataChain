@@ -116,6 +116,16 @@ List and detail responses include a **`status`** field: `"online"` or `"offline"
 - the live **`stream_url` probe** fails (HTTP/HTTPS request or RTSP OPTIONS / TCP), or
 - camera ingest marked the camera down after FFmpeg hit its restart cap (`ingest_offline_at`; Slice C / CP-C.P8). A new ingest run clears that flag when it starts.
 
+When `status` is `"offline"`, **`offline_reason`** distinguishes the cause (Slice C / CP-C.C1):
+
+- `"ingest_failed"` — ingest stopped after the FFmpeg restart cap (even if the URL still answers a probe)
+- `"unreachable"` — the live stream probe failed
+- `null` — camera is online
+
+If both apply, `ingest_failed` wins so the dashboard can explain that footage may be missing.
+
+List and detail also include **`ingest_offline_at`**: an ISO-8601 timestamp when ingest hit the restart cap, or `null` otherwise. The camera card and detail page use it to say **since …** when capture stopped.
+
 Probe details (not stored in the database):
 
 - **HTTP/HTTPS:** short request to the stream URL (HEAD, then ranged GET). Any HTTP response (including 401/404) counts as **online**; network failures → **offline**.
@@ -169,7 +179,7 @@ The process writes a continuous **MPEG-TS** stream to **stdout** (suitable for p
 
 Receive the **live `stream_url`** of a registered camera with FFmpeg (HTTP/HTTPS or RTSP) and split it into **1-minute `.mp4` segments** under `backend/temp/<camera-id>/`. Each file is named `{camera-uuid}_{YYYYMMDDTHHMMSS}Z.mp4` (camera ID + recording start). End time is start plus the segment duration (default 60s); parse with `app.services.segment_identity.parse_segment_path`. After a file is closed, a **basic integrity check** runs before later stages: complete MP4 (`ftyp` + `moov`), a video stream (ffprobe), and a SHA-256 fingerprint. Failed files stay in `temp/` and are not handed on. **Passing files stay under `temp/<camera-id>/` until processing succeeds.** Temp files are **deleted only after processing succeeds**; processing failures stay on disk and are retried. IPFS / chain / DB is still a stub, so this ingest path does not delete on staging-only success. Soft-deleted cameras are skipped.
 
-If FFmpeg exits unexpectedly, ingest **restarts it** (delay `CCTV_FFMPEG_RESTART_DELAY_SECONDS`, default 2s) up to **`CCTV_FFMPEG_MAX_RESTARTS` (default 10 for camera ingest)**. Each attempt is logged with the camera id. After the cap, ingest stops and sets **`ingest_offline_at`** so the camera shows **offline** on the dashboard even if the URL still answers a probe. A later ingest run clears that flag when it starts. Apply Alembic revision `20260824_000003`.
+If FFmpeg exits unexpectedly, ingest **restarts it** (delay `CCTV_FFMPEG_RESTART_DELAY_SECONDS`, default 2s) up to **`CCTV_FFMPEG_MAX_RESTARTS` (default 10 for camera ingest)**. Each attempt is logged with the camera id. After the cap, ingest stops and sets **`ingest_offline_at`** so the camera shows **offline** on the dashboard even if the URL still answers a probe (`offline_reason`: `ingest_failed`). A later ingest run clears that flag when it starts. Apply Alembic revision `20260824_000003`.
 
 From `backend/` with the venv activated, Postgres running, and migrations applied:
 

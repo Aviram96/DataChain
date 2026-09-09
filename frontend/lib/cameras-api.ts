@@ -9,6 +9,9 @@ export type CameraCreatePayload = {
 
 export type CameraStatus = "online" | "offline";
 
+/** Present when status is offline: ingest restart-cap vs stream probe. */
+export type CameraOfflineReason = "ingest_failed" | "unreachable";
+
 /** Default list sort: newest cameras first (Slice B / CP-B.C10). */
 export type CameraSort =
   | "created_at_desc"
@@ -25,7 +28,22 @@ export type CameraPublic = {
   location: string | null;
   created_at: string;
   status: CameraStatus;
+  offline_reason: CameraOfflineReason | null;
+  ingest_offline_at: string | null;
 };
+
+/** Copy for ingest restart-cap (CP-C.C1); includes when capture stopped. */
+export function ingestFailedMessage(
+  camera: Pick<CameraPublic, "offline_reason" | "ingest_offline_at">
+): string | null {
+  if (camera.offline_reason !== "ingest_failed") {
+    return null;
+  }
+  const since = camera.ingest_offline_at
+    ? ` since ${new Date(camera.ingest_offline_at).toLocaleString()}`
+    : "";
+  return `Capture stopped after repeated failures${since}. Footage for this period may be missing.`;
+}
 
 export type CameraListResponse = {
   items: CameraPublic[];

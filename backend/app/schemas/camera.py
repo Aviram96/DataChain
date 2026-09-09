@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 CameraStatus = Literal["online", "offline"]
+CameraOfflineReason = Literal["ingest_failed", "unreachable"]
 
 
 class CameraBase(BaseModel):
@@ -66,6 +67,8 @@ class CameraPublic(BaseModel):
     location: str | None
     created_at: datetime
     status: CameraStatus
+    offline_reason: CameraOfflineReason | None = None
+    ingest_offline_at: datetime | None = None
 
 
 class CameraListResponse(BaseModel):

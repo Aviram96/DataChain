@@ -102,6 +102,23 @@ def effective_camera_status(
     return probed
 
 
+def camera_offline_reason(
+    camera: Camera,
+    probed: Literal["online", "offline"],
+) -> Literal["ingest_failed", "unreachable"] | None:
+    """Why the camera is offline, or None when it is online.
+
+    Ingest-gave-up (``ingest_offline_at``) takes precedence over a failed
+    stream probe so the dashboard can distinguish capture stop from
+    unreachable.
+    """
+    if effective_camera_status(camera, probed) == "online":
+        return None
+    if camera.ingest_offline_at is not None:
+        return "ingest_failed"
+    return "unreachable"
+
+
 @dataclass(frozen=True)
 class CameraIngestConfig:
     """Settings for receiving and chunking one camera stream."""

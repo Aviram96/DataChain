@@ -23,7 +23,7 @@ from app.schemas.camera import (
     CameraStatus,
     CameraUpdate,
 )
-from app.services.camera_ingest import effective_camera_status
+from app.services.camera_ingest import camera_offline_reason, effective_camera_status
 from app.services.camera_probe import probe_many_statuses, probe_status
 
 router = APIRouter()
@@ -51,6 +51,8 @@ def _camera_public(camera: Camera, camera_status: CameraStatus) -> CameraPublic:
         location=camera.location,
         created_at=camera.created_at,
         status=effective_camera_status(camera, camera_status),
+        offline_reason=camera_offline_reason(camera, camera_status),
+        ingest_offline_at=camera.ingest_offline_at,
     )
 
 
@@ -217,7 +219,7 @@ def list_cameras(
     for camera, probed in zip(cameras, statuses, strict=True):
         camera_status = effective_camera_status(camera, probed)
         if camera_status == status_filter:
-            matched.append((camera, camera_status))
+            matched.append((camera, probed))
     total = len(matched)
     pages = max(1, math.ceil(total / page_size)) if total else 1
     offset = (page - 1) * page_size
