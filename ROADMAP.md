@@ -141,7 +141,7 @@ Keep the **Status** column in this table aligned with the repository as work lan
 
 **Exit criteria**: End-to-end path from chunk file → CID → tx → DB row; contract address and ABI versioned for frontend verification.
 
-**Progress note**: Contract store/read + tests landed 2026-09-14 (`Datachain.sol`, `contracts/test/Datachain.ts`) — **US-6.4** in progress locally (not deployed to Amoy; backend Web3.py not wired). **US-6.1 / US-6.2** Pinata upload helper (`pinata_ipfs.py`, REST pinFileToIPFS) — ingest not wired. **US-6.10** schema ready (`VideoRecord`, Alembic `20260914_000004`); pipeline does not persist yet. See **CP-D.P1** / **CP-D.P2** / **CP-D.P6** Partial / **CP-D.P8** Implemented.
+**Progress note**: Contract store/read + tests landed 2026-09-14 (`Datachain.sol`, `contracts/test/Datachain.ts`) — **US-6.4** in progress locally (backend Web3.py not wired). **US-6.5** Amoy deploy path (`scripts/deploy.ts`, `npm run deploy:amoy`); **US-6.6** live Amoy address after the maintainer runs it. **US-6.1 / US-6.2** Pinata upload helper (`pinata_ipfs.py`) — ingest not wired. **US-6.10** schema ready (`VideoRecord`, Alembic `20260914_000004`); pipeline does not persist yet. See **CP-D.P4** Implemented; **CP-D.P1** / **CP-D.P2** / **CP-D.P6** Partial / **CP-D.P8** Implemented.
 
 ---
 
@@ -239,13 +239,13 @@ Epics **1–10** above remain historical delivery notes for the original roadmap
 | A | Register and Login | Done — all CP-A stories Implemented (see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`) |
 | B | Camera dashboard management | Done — all CP-B stories Implemented (search/filter/sort, soft delete, unique names, detail page) |
 | C | Video processing pipeline | Done — CP-C.P1–P8 and CP-C.C1 Implemented |
-| D | IPFS storage and blockchain anchoring | In progress — CP-D.P8 Implemented; CP-D.P1 / CP-D.P2 / CP-D.P6 Partial |
+| D | IPFS storage and blockchain anchoring | In progress — CP-D.P4 / CP-D.P8 Implemented; CP-D.P1 / CP-D.P2 / CP-D.P6 Partial |
 | E | Video management and verification | Not started — all stories TBD |
 
 
 **Exit criteria**: Every story in `docs/CLIENT_PROGRAMMER_USER_STORIES.md` is Implemented, Deferred (with reason), or explicitly Declined; open decisions in that file are resolved.
 
-**Progress note**: Slice A complete 2026-07-21 (including landing refinement: toolbar-free home, problem/solution, signed-in → `/cameras`). Slice B complete 2026-07-21 — apply Alembic revision `20260721_000002` for `deleted_at` + unique active name. Slice C complete 2026-09-09 — **CP-C.P1–P8** (simulate feed, receive stream, 1-minute chunks, camera+time filenames, pre-stage integrity check, stage under `temp/` until processing succeeds, delete temp files only after processing success, capped FFmpeg restart + ingest offline) and **CP-C.C1** (`offline_reason` `ingest_failed` vs `unreachable`; `ingest_offline_at` on the API so the card/detail can say **since** capture stopped); apply Alembic `20260824_000003` for `ingest_offline_at`; see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`. Slice D started 2026-09-14 — **CP-D.P8** Implemented; **CP-D.P2** Partial (`Datachain.sol` keyed by camera + start time); **CP-D.P6** Partial (`VideoRecord` + Alembic `20260914_000004`); **CP-D.P1** Partial (Pinata upload helper, ingest not wired).
+**Progress note**: Slice A complete 2026-07-21 (including landing refinement: toolbar-free home, problem/solution, signed-in → `/cameras`). Slice B complete 2026-07-21 — apply Alembic revision `20260721_000002` for `deleted_at` + unique active name. Slice C complete 2026-09-09 — **CP-C.P1–P8** (simulate feed, receive stream, 1-minute chunks, camera+time filenames, pre-stage integrity check, stage under `temp/` until processing succeeds, delete temp files only after processing success, capped FFmpeg restart + ingest offline) and **CP-C.C1** (`offline_reason` `ingest_failed` vs `unreachable`; `ingest_offline_at` on the API so the card/detail can say **since** capture stopped); apply Alembic `20260824_000003` for `ingest_offline_at`; see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`. Slice D started 2026-09-14 — **CP-D.P8** Implemented; **CP-D.P2** Partial (`Datachain.sol` keyed by camera + start time); **CP-D.P6** Partial (`VideoRecord` + Alembic `20260914_000004`); **CP-D.P1** Partial (Pinata upload helper, ingest not wired); **CP-D.P4** Implemented (Amoy deploy path; live deploy is maintainer-run).
 
 ---
 

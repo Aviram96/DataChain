@@ -1,4 +1,4 @@
-import { defineConfig } from "hardhat/config";
+import { configVariable, defineConfig } from "hardhat/config";
 import hardhatToolboxViem from "@nomicfoundation/hardhat-toolbox-viem";
 
 export default defineConfig({
@@ -10,6 +10,15 @@ export default defineConfig({
         enabled: true,
         runs: 200,
       },
+    },
+  },
+  networks: {
+    polygonAmoy: {
+      type: "http",
+      chainType: "l1",
+      chainId: 80002,
+      url: configVariable("AMOY_RPC_URL"),
+      accounts: [configVariable("AMOY_PRIVATE_KEY")],
     },
   },
 });

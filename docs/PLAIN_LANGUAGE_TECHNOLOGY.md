@@ -182,9 +182,9 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **What it is:** **Hardhat** is a **development environment** for Ethereum-style smart contracts: it runs a local simulation for tests, compiles **Solidity**, and loads plugins for verification, deployment (**Hardhat Ignition**), and network helpers. This repository uses **Hardhat 3** with the recommended **Viem**-based toolbox.
 
-**Why Datachain uses it:** We need a **standard, repeatable** way to compile `Datachain.sol`, run automated tests, and later add deploy scripts (Polygon testnet per `ROADMAP.md`) without hand-wiring compilers and test runners.
+**Why Datachain uses it:** We need a **standard, repeatable** way to compile `Datachain.sol`, run automated tests, and deploy to **Polygon Amoy** (`scripts/deploy.ts`) without hand-wiring compilers.
 
-**Where it shows up:** `contracts/package.json`, `contracts/hardhat.config.ts`, `contracts/test/`; maintainer notes in `contracts/README.md`.
+**Where it shows up:** `contracts/package.json`, `contracts/hardhat.config.ts`, `contracts/scripts/deploy.ts`, `contracts/test/`; maintainer notes in `contracts/README.md`.
 
 ### Viem (in `contracts/` tests and scripts)
 
@@ -200,7 +200,15 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** On-chain storage is for **anchors and metadata pointers** (for example CIDs), not raw video; Solidity expresses those rules and lets anyone verify what was committed on-chain.
 
-**Where it shows up:** `contracts/contracts/Datachain.sol` — stores each minute’s **CID**, **segment hash**, and **start/end times**, keyed by camera id and start time. Tests in `contracts/test/Datachain.ts`. Deploy to Polygon and backend wiring are later slices.
+**Where it shows up:** `contracts/contracts/Datachain.sol` — stores each minute’s **CID**, **segment hash**, and **start/end times**, keyed by camera id and start time. Tests in `contracts/test/Datachain.ts`. Deploy path: `contracts/scripts/deploy.ts` (Polygon Amoy). Backend wiring is a later slice.
+
+### Polygon Amoy (testnet)
+
+**What it is:** **Polygon** is an Ethereum-compatible blockchain that is cheaper to use than Ethereum mainnet. **Amoy** is Polygon’s current **test network** (chain id 80002): fake POL, no real money, used to try contracts before any mainnet deploy.
+
+**Why Datachain uses it:** Anchoring a CID on-chain should be practiced on a testnet first. Amoy is what the roadmap names for this project; mainnet is out of scope unless explicitly approved.
+
+**Where it shows up:** `contracts/hardhat.config.ts` network `polygonAmoy`; `npm run deploy:amoy`. A live Amoy address exists only after someone runs that command with a funded testnet key.
 
 ### npm audit (contracts)
 
