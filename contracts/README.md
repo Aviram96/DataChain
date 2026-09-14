@@ -2,6 +2,8 @@
 
 Solidity sources and Hardhat tooling for on-chain anchoring (`ROADMAP.md`).
 
+`Datachain.sol` records one-minute segment metadata (camera id, start/end, IPFS CID, SHA-256) so it can be read back later. The deployer address is the only writer. Polygon Amoy deploy is a later slice.
+
 ## Stack
 
 - **Hardhat 3** with **`@nomicfoundation/hardhat-toolbox-viem`** (Viem + **Node.js `node:test`** for TypeScript tests).

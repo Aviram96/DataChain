@@ -200,7 +200,7 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** On-chain storage is for **anchors and metadata pointers** (for example CIDs), not raw video; Solidity expresses those rules and lets anyone verify what was committed on-chain.
 
-**Where it shows up:** `contracts/contracts/Datachain.sol` (Epic 1 scaffold; logic expands in later epics).
+**Where it shows up:** `contracts/contracts/Datachain.sol` — stores each minute’s **CID**, **segment hash**, and **start/end times**, keyed by camera id and start time. Tests in `contracts/test/Datachain.ts`. Deploy to Polygon and backend wiring are later slices.
 
 ### npm audit (contracts)
 
