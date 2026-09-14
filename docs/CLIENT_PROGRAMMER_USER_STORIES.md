@@ -183,7 +183,7 @@ _(Users consume results via playback and verification in Slice E; anchoring itse
 | CP-D.P3 | As the backend, I want Web3.py to submit anchor transactions, with graceful handling of RPC timeouts and gas failures, logging, and retry without losing the segment. | TBD |
 | CP-D.P4 | As a developer, I want a Hardhat deployment path for the contract on Polygon Amoy testnet. | TBD |
 | CP-D.P5 | As the system, I want segment metadata readable from the smart contract even if the database is unavailable. | TBD |
-| CP-D.P6 | As the backend, I want each finalized segment stored in PostgreSQL with camera ID, start time, end time, IPFS CID, segment hash, and transaction hash. | TBD |
+| CP-D.P6 | As the backend, I want each finalized segment stored in PostgreSQL with camera ID, start time, end time, IPFS CID, segment hash, and transaction hash. | Partial — `VideoRecord` ORM + Alembic `20260914_000004` (`segment_hash`, nullable `tx_hash`); ingest does not write rows yet |
 | CP-D.P7 | As the system, I want anchoring failures detected so a segment is not treated as fully proven before a successful on-chain proof. | TBD |
 | CP-D.P8 | As a developer, I want contract tests that store and return camera ID, CID, segment hash, start time, and end time. | Implemented — `contracts/test/Datachain.ts` |
 | CP-D.P9 | As a developer, I want an integration test for IPFS upload → chain anchor → PostgreSQL save with consistent CID and tx hash. | TBD |
@@ -281,3 +281,4 @@ Add here only if the teacher requires them in the client–programmer pack.
 | 2026-09-09 | Slice C CP-C.C1 Implemented: `offline_reason` (`ingest_failed` vs `unreachable`); camera card and detail copy when capture stopped after the restart cap. Slice C complete. |
 | 2026-09-09 | CP-C.C1 follow-up: API returns `ingest_offline_at`; camera card and detail include **since …** when capture stopped. |
 | 2026-09-14 | Slice D started: CP-D.P8 Implemented; CP-D.P2 Partial — `Datachain.sol` store/read + Hardhat tests. |
+| 2026-09-14 | CP-D.P6 Partial — `VideoRecord` model + Alembic `20260914_000004` (`segment_hash`, nullable `tx_hash`). |

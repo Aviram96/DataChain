@@ -131,7 +131,7 @@ npm run build
 bash /home/student/start-datachain.sh
 ```
 
-Skip `pip` / `npm` / `alembic` if that update did not change dependencies or the database.
+Skip `pip` / `npm` / `alembic` if that update did not change dependencies or the database. Video records schema: apply through Alembic `20260914_000004` (`segment_hash`, nullable `tx_hash`).
 
 ---
 

@@ -12,6 +12,7 @@ from app.database import Base
 
 if TYPE_CHECKING:
     from app.models.user import User
+    from app.models.video_record import VideoRecord
 
 
 class Camera(Base):
@@ -50,3 +51,6 @@ class Camera(Base):
     )
 
     owner: Mapped["User"] = relationship(back_populates="cameras")
+    video_records: Mapped[list["VideoRecord"]] = relationship(
+        back_populates="camera",
+    )

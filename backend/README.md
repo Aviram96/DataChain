@@ -109,6 +109,8 @@ alembic revision --autogenerate -m "describe change"
 alembic downgrade -1
 ```
 
+`video_records` (Slice D / **CP-D.P6**, Alembic `20260914_000004`): one row per minute with camera id, start/end, `ipfs_cid`, SHA-256 `segment_hash`, and optional `tx_hash` (null until the chain tx succeeds). Unique `(camera_id, started_at)`. Ingest does not insert rows yet.
+
 ## Camera online/offline (Slice B / CP-B.P4)
 
 List and detail responses include a **`status`** field: `"online"` or `"offline"`. Status is **offline** if either:
