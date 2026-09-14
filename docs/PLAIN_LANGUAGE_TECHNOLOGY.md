@@ -240,16 +240,24 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** Chunks are **temporary staging** until IPFS and the chain record exist. Automatic cleanup keeps laptops and servers healthy during long-running CCTV ingest. Camera ingest (Slice C) keeps staged files in `temp/` until processing succeeds, then deletes them; failed files stay for retry. The Epic 5 file-chunk path still deletes on stub success.
 
-**Where it shows up:** `backend/app/services/chunk_processing_worker.py`, `backend/app/services/temp_chunk_cleanup.py` (`delete_after_successful_processing`), `backend/app/services/segment_staging.py` (ingest keep-until-success), `--cleanup-after-success` on `chunk_cctv_feed.py`, and `scripts/process_temp_chunks.py`. Epic 6 / Slice D swaps the **stub processor** for real Pinata/Web3 steps.
+**Where it shows up:** `backend/app/services/chunk_processing_worker.py`, `backend/app/services/temp_chunk_cleanup.py` (`delete_after_successful_processing`), `backend/app/services/segment_staging.py` (ingest keep-until-success), `--cleanup-after-success` on `chunk_cctv_feed.py`, and `scripts/process_temp_chunks.py`. Slice D Pinata upload is `pinata_ipfs.py` (not yet the ingest processor).
 
-### Development mocks for IPFS and blockchain (Epic 6, planned)
+### Pinata (IPFS pinning)
 
-**What it is:** A **mock** (fake stand-in) lets the backend **pretend** an external service succeeded—returning a made-up **CID** or **transaction hash**—so the rest of the pipeline (database rows, API, UI) can be built **before** you have Pinata or Polygon keys.
+**What it is:** **IPFS** (InterPlanetary File System) stores files by a cryptographic fingerprint called a **CID** (content identifier). **Pinata** is a hosted service that **pins** (keeps available) those files so a laptop or server does not have to run an IPFS node. There is no official Pinata Python SDK; Datachain calls Pinata’s **pinFileToIPFS** HTTP API with a secret **JWT**.
 
-**Why Datachain uses it:** You can finish **Web2 flow** (chunk → record metadata → list videos) without paying for pinning or testnet gas while learning. Later, environment flags (for example `MOCK_IPFS=true`, `MOCK_CHAIN=true`) turn off mocks and call real Pinata and Polygon Amoy.
+**Why Datachain uses it:** One-minute CCTV clips stay **off-chain**. The CID uniquely identifies the bytes; later the same CID is stored in PostgreSQL and on Polygon so verification can detect a swapped file.
 
-**Where it will show up:** Epic 6 under `backend/` (storage and Web3 modules); configuration documented in `backend/.env.example` when implemented. **Not in the repo yet**—real integrations replace mocks when you are ready.
+**Where it shows up:** `backend/app/services/pinata_ipfs.py`, `backend/scripts/upload_segment_ipfs.py`, `PINATA_JWT` in `backend/.env.example`. Ingest does not upload automatically yet.
+
+### Development mocks for IPFS and blockchain (later slices)
+
+**What it is:** A **mock** (fake stand-in) lets the backend **pretend** an external service succeeded—returning a made-up **CID** or **transaction hash**—so the rest of the pipeline can be exercised without Pinata or Polygon keys.
+
+**Why Datachain uses it:** Local and college environments can stay secret-free. Unit tests already **mock HTTP** for Pinata; a `MOCK_IPFS` runtime flag is still later.
+
+**Where it shows up:** `backend/tests/test_pinata_ipfs.py`. Runtime mocks are **not** in the repo yet.
 
 ### Technologies on the roadmap but not fully in the repo yet
 
-The product vision still needs full **IPFS/Pinata** and **Polygon Amoy** integrations (with mocks first in Epic 6), plus **ethers.js** browser verification (Epic 8). Plain-language entries here are updated as each lands; see **Development mocks** above for the interim approach.
+The product vision still needs **ingest-wired** Pinata uploads, **Polygon Amoy** anchoring, and **ethers.js** browser verification (Epic 8 / Slice E). Plain-language entries here are updated as each lands.

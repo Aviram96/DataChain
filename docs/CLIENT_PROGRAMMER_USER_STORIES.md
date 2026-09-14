@@ -178,7 +178,7 @@ _(Users consume results via playback and verification in Slice E; anchoring itse
 
 | ID | Story | Status |
 | -- | ----- | ------ |
-| CP-D.P1 | As the system, I want each one-minute segment uploaded to IPFS and to receive its CID. | TBD |
+| CP-D.P1 | As the system, I want each one-minute segment uploaded to IPFS and to receive its CID. | Partial — `pinata_ipfs.upload_segment` + `scripts/upload_segment_ipfs.py`; ingest does not upload yet |
 | CP-D.P2 | As the system, I want each segment’s CID and recording details anchored on Polygon via a Datachain smart contract keyed by camera (and segment identity). | Partial — `Datachain.sol` stores/reads by camera id + start time (CID, hash, start, end); not deployed to Polygon or called from the backend yet |
 | CP-D.P3 | As the backend, I want Web3.py to submit anchor transactions, with graceful handling of RPC timeouts and gas failures, logging, and retry without losing the segment. | TBD |
 | CP-D.P4 | As a developer, I want a Hardhat deployment path for the contract on Polygon Amoy testnet. | TBD |
@@ -282,3 +282,4 @@ Add here only if the teacher requires them in the client–programmer pack.
 | 2026-09-09 | CP-C.C1 follow-up: API returns `ingest_offline_at`; camera card and detail include **since …** when capture stopped. |
 | 2026-09-14 | Slice D started: CP-D.P8 Implemented; CP-D.P2 Partial — `Datachain.sol` store/read + Hardhat tests. |
 | 2026-09-14 | CP-D.P6 Partial — `VideoRecord` model + Alembic `20260914_000004` (`segment_hash`, nullable `tx_hash`). |
+| 2026-09-14 | CP-D.P1 Partial — Pinata `pinFileToIPFS` upload helper and CLI; ingest not wired. |

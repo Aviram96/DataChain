@@ -29,3 +29,21 @@ def get_camera_probe_timeout_seconds() -> float:
         return max(0.5, min(10.0, float(raw)))
     except ValueError:
         return 2.0
+
+
+def get_pinata_jwt() -> str:
+    token = os.getenv("PINATA_JWT", "").strip()
+    if not token:
+        raise RuntimeError(
+            "PINATA_JWT is not set. Set it in the environment "
+            "(see backend/.env.example)."
+        )
+    return token
+
+
+def get_pinata_timeout_seconds() -> float:
+    raw = os.getenv("PINATA_TIMEOUT_SECONDS", "120")
+    try:
+        return max(5.0, min(600.0, float(raw)))
+    except ValueError:
+        return 120.0

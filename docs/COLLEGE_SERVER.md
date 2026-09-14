@@ -144,7 +144,7 @@ Cameras you add **on the college website** are stored in the **college** databas
 - A stream URL that only works on your home Wi‑Fi will show **offline** on the college site.
 - When ingest is started, run it **on the VM** (or on a machine that can reach the cameras). Temp files: `/var/www/datachain/temp_video`.
 
-IPFS (Pinata) and Polygon anchoring are **not** enabled on this server yet.
+IPFS (Pinata) and Polygon anchoring are **not** enabled on this server yet. Local Pinata upload (after `PINATA_JWT` in `backend/.env`) is `python scripts/upload_segment_ipfs.py <file.mp4>` from `backend/`; ingest still does not upload automatically.
 
 ---
 

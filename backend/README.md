@@ -245,6 +245,19 @@ Continuous ingest **restarts FFmpeg automatically** after a non-zero exit. One-p
 
 Implementation: `backend/app/services/ffmpeg_supervisor.py` (shared by feed simulator, loop chunker, and `ingest_camera.py`).
 
+## Pinata IPFS upload (Slice D / CP-D.P1)
+
+Upload **one** local `.mp4` segment to Pinata and print its **CID**. Camera ingest does **not** call this yet.
+
+1. Create a Pinata JWT (API key with pinning). Put it in `backend/.env` as `PINATA_JWT` (never commit it).
+2. From `backend/` with the venv activated (`pip install -r requirements.txt` if you just pulled):
+
+```powershell
+python scripts/upload_segment_ipfs.py path\to\segment.mp4
+```
+
+Optional `PINATA_TIMEOUT_SECONDS` (default **120**). Implementation: `app/services/pinata_ipfs.py` (Pinata `pinFileToIPFS` REST API). Tests mock HTTP in `tests/test_pinata_ipfs.py`.
+
 ## Tests
 
 From `backend/` with dev dependencies installed:
