@@ -180,7 +180,7 @@ _(Users consume results via playback and verification in Slice E; anchoring itse
 | -- | ----- | ------ |
 | CP-D.P1 | As the system, I want each one-minute segment uploaded to IPFS and to receive its CID. | Partial — `pinata_ipfs.upload_segment` + `scripts/upload_segment_ipfs.py`; ingest does not upload yet |
 | CP-D.P2 | As the system, I want each segment’s CID and recording details anchored on Polygon via a Datachain smart contract keyed by camera (and segment identity). | Partial — `Datachain.sol` stores/reads by camera id + start time (CID, hash, start, end); not deployed to Polygon or called from the backend yet |
-| CP-D.P3 | As the backend, I want Web3.py to submit anchor transactions, with graceful handling of RPC timeouts and gas failures, logging, and retry without losing the segment. | TBD |
+| CP-D.P3 | As the backend, I want Web3.py to submit anchor transactions, with graceful handling of RPC timeouts and gas failures, logging, and retry without losing the segment. | Implemented — `chain_anchor.anchor_segment` retries timeout/gas; ingest not wired |
 | CP-D.P4 | As a developer, I want a Hardhat deployment path for the contract on Polygon Amoy testnet. | Implemented — `contracts/scripts/deploy.ts`, `npm run deploy:amoy`; live Amoy deploy is run by the maintainer |
 | CP-D.P5 | As the system, I want segment metadata readable from the smart contract even if the database is unavailable. | TBD |
 | CP-D.P6 | As the backend, I want each finalized segment stored in PostgreSQL with camera ID, start time, end time, IPFS CID, segment hash, and transaction hash. | Partial — `VideoRecord` ORM + Alembic `20260914_000004` (`segment_hash`, nullable `tx_hash`); ingest does not write rows yet |
@@ -284,3 +284,4 @@ Add here only if the teacher requires them in the client–programmer pack.
 | 2026-09-14 | CP-D.P6 Partial — `VideoRecord` model + Alembic `20260914_000004` (`segment_hash`, nullable `tx_hash`). |
 | 2026-09-14 | CP-D.P1 Partial — Pinata `pinFileToIPFS` upload helper and CLI; ingest not wired. |
 | 2026-09-14 | CP-D.P4 Implemented — Hardhat `polygonAmoy` network + `scripts/deploy.ts` (`npm run deploy:amoy`). |
+| 2026-09-14 | CP-D.P3 Implemented — Web3.py `anchor_segment` with RPC timeout / gas retry; ingest not wired. |

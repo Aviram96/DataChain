@@ -258,6 +258,18 @@ python scripts/upload_segment_ipfs.py path\to\segment.mp4
 
 Optional `PINATA_TIMEOUT_SECONDS` (default **120**). Implementation: `app/services/pinata_ipfs.py` (Pinata `pinFileToIPFS` REST API). Tests mock HTTP in `tests/test_pinata_ipfs.py`.
 
+## Polygon Amoy anchor (Slice D / CP-D.P3)
+
+Send **one** `anchorSegment` transaction with **Web3.py**. RPC timeouts and gas/fee errors are **retried** (default 3 attempts). A failed anchor raises; nothing in this helper deletes a temp file. Camera ingest does **not** call this yet.
+
+Set `DATACHAIN_CONTRACT_ADDRESS` (from `npm run deploy:amoy`) and `DATACHAIN_PRIVATE_KEY` (the **owner** / deployer testnet key). Optional: `POLYGON_RPC_URL`, `ANCHOR_MAX_ATTEMPTS`.
+
+```powershell
+python scripts/anchor_segment.py --camera-id UUID --started-at 1700000000 --ended-at 1700000060 --cid bafy... --segment-hash <64-char-sha256-hex>
+```
+
+Implementation: `app/services/chain_anchor.py`. Tests in `tests/test_chain_anchor.py` mock the send path.
+
 ## Tests
 
 From `backend/` with dev dependencies installed:

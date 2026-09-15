@@ -258,14 +258,22 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Where it shows up:** `backend/app/services/pinata_ipfs.py`, `backend/scripts/upload_segment_ipfs.py`, `PINATA_JWT` in `backend/.env.example`. Ingest does not upload automatically yet.
 
+### Web3.py (Polygon anchoring)
+
+**What it is:** **Web3.py** is a Python library for talking to Ethereum-compatible blockchains (send transactions, read contracts). Datachain uses it to call `anchorSegment` on Polygon **Amoy**.
+
+**Why Datachain uses it:** The backend must record each minute’s CID and hash on-chain. If the RPC times out or gas is too low, the helper **retries** and **does not treat the segment as proven**; the temp file can stay for another attempt.
+
+**Where it shows up:** `backend/app/services/chain_anchor.py`, `backend/scripts/anchor_segment.py`, ABI in `backend/app/contracts/datachain_abi.py`. Ingest does not send anchors automatically yet.
+
 ### Development mocks for IPFS and blockchain (later slices)
 
 **What it is:** A **mock** (fake stand-in) lets the backend **pretend** an external service succeeded—returning a made-up **CID** or **transaction hash**—so the rest of the pipeline can be exercised without Pinata or Polygon keys.
 
 **Why Datachain uses it:** Local and college environments can stay secret-free. Unit tests already **mock HTTP** for Pinata; a `MOCK_IPFS` runtime flag is still later.
 
-**Where it shows up:** `backend/tests/test_pinata_ipfs.py`. Runtime mocks are **not** in the repo yet.
+**Where it shows up:** `backend/tests/test_pinata_ipfs.py`, `backend/tests/test_chain_anchor.py`. Runtime mocks are **not** in the repo yet.
 
 ### Technologies on the roadmap but not fully in the repo yet
 
-The product vision still needs **ingest-wired** Pinata uploads, **Polygon Amoy** anchoring, and **ethers.js** browser verification (Epic 8 / Slice E). Plain-language entries here are updated as each lands.
+The product vision still needs **ingest-wired** Pinata upload + chain + DB persist, and **ethers.js** browser verification (Epic 8 / Slice E). Plain-language entries here are updated as each lands.
