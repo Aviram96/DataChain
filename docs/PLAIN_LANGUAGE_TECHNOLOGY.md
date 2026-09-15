@@ -256,7 +256,7 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** One-minute CCTV clips stay **off-chain**. The CID uniquely identifies the bytes; later the same CID is stored in PostgreSQL and on Polygon so verification can detect a swapped file.
 
-**Where it shows up:** `backend/app/services/pinata_ipfs.py`, `backend/scripts/upload_segment_ipfs.py`, `PINATA_JWT` in `backend/.env.example`. Ingest does not upload automatically yet.
+**Where it shows up:** `backend/app/services/pinata_ipfs.py`, `backend/scripts/upload_segment_ipfs.py`, ingest via `ingest_segment_processor.py`, `PINATA_JWT` in `backend/.env.example`.
 
 ### Web3.py (Polygon anchoring)
 
@@ -264,7 +264,7 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** The backend must record each minute’s CID and hash on-chain. If the RPC times out or gas is too low, the helper **retries** and **does not treat the segment as proven**; the temp file can stay for another attempt.
 
-**Where it shows up:** `backend/app/services/chain_anchor.py`, `backend/scripts/anchor_segment.py`, ABI in `backend/app/contracts/datachain_abi.py`. Ingest does not send anchors automatically yet.
+**Where it shows up:** `backend/app/services/chain_anchor.py`, `backend/scripts/anchor_segment.py`, ingest via `ingest_segment_processor.py`, ABI in `backend/app/contracts/datachain_abi.py`.
 
 ### Development mocks for IPFS and blockchain (later slices)
 
@@ -276,4 +276,4 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 ### Technologies on the roadmap but not fully in the repo yet
 
-The product vision still needs **ingest-wired** Pinata upload + chain + DB persist, and **ethers.js** browser verification (Epic 8 / Slice E). Plain-language entries here are updated as each lands.
+The product vision still needs **ethers.js** browser verification (Epic 8 / Slice E) and a live Amoy contract address for production ingest.

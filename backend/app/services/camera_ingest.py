@@ -46,10 +46,8 @@ from app.services.segment_integrity import (
     ffprobe_executable_for,
     file_has_video_stream,
 )
-from app.services.segment_staging import (
-    staging_dir_for_camera,
-    staging_worker_config,
-)
+from app.services.ingest_segment_processor import process_ingest_segment
+from app.services.segment_staging import staging_dir_for_camera
 from app.services.video_chunker import (
     DEFAULT_CHUNK_DURATION_SECONDS,
     VideoChunkerConfig,
@@ -160,8 +158,10 @@ def build_ffmpeg_receive_command(config: CameraIngestConfig) -> list[str]:
 
 def integrity_worker_config_for_ingest(
     config: CameraIngestConfig,
+    *,
+    session_factory: sessionmaker | None = None,
 ) -> ChunkProcessingWorkerConfig:
-    """Worker that integrity-checks closed segments and stages them under temp/."""
+    """Integrity-check closed segments, then Pinata + chain + DB."""
     chunk = chunker_config_for_ingest(config)
     ffprobe = ffprobe_executable_for(config.ffmpeg_executable)
 
@@ -175,9 +175,20 @@ def integrity_worker_config_for_ingest(
             ),
         )
 
-    return staging_worker_config(
+    def _process(path: Path) -> bool:
+        return process_ingest_segment(
+            path,
+            duration_seconds=config.segment_duration_seconds,
+            session_factory=session_factory,
+        )
+
+    return ChunkProcessingWorkerConfig(
         temp_dir=chunk.temp_dir,
+        poll_interval_seconds=1.0,
+        stable_delay_seconds=0.5,
         segment_pattern=chunk.segment_pattern,
+        processor=_process,
+        delete_on_success=True,
         integrity_check=_check,
     )
 
@@ -277,7 +288,8 @@ class CameraIngest:
         max_restarts = resolve_ingest_max_restarts()
         logger.info(
             "Chunking camera %s from %s into %ss segments under %s "
-            "(staged until processing succeeds; FFmpeg max restarts %s)",
+            "(Pinata + chain + DB; delete temp only after success; "
+            "FFmpeg max restarts %s)",
             self._config.camera_id,
             self._config.stream_url,
             chunk_config.segment_duration_seconds,
@@ -295,7 +307,12 @@ class CameraIngest:
             log_label=f"camera {self._config.camera_id}",
         )
         self._supervisor = FFmpegSupervisor(run_config)
-        worker = ChunkProcessingWorker(integrity_worker_config_for_ingest(self._config))
+        worker = ChunkProcessingWorker(
+            integrity_worker_config_for_ingest(
+                self._config,
+                session_factory=self._session_factory,
+            )
+        )
         worker.start()
         try:
             code = self._supervisor.run_until_signal()

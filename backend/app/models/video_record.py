@@ -1,8 +1,8 @@
 """One-minute segment metadata (Slice D / CP-D.P6).
 
-Rows are written after IPFS (and, when successful, chain) in a later slice.
-``tx_hash`` is nullable so a CID can be stored before an on-chain proof exists
-(CP-D.P7). ``segment_hash`` is the SHA-256 hex from the ingest integrity check.
+Rows are written by camera ingest after a successful IPFS CID and on-chain tx
+(``ingest_segment_processor``). ``tx_hash`` stays nullable in the schema so a
+CID can exist before proof; ingest only inserts after a tx hash (CP-D.P7).
 """
 
 from __future__ import annotations

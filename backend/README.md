@@ -179,7 +179,7 @@ The process writes a continuous **MPEG-TS** stream to **stdout** (suitable for p
 
 ## Camera stream ingest (Slice C / CP-C.P2–P8)
 
-Receive the **live `stream_url`** of a registered camera with FFmpeg (HTTP/HTTPS or RTSP) and split it into **1-minute `.mp4` segments** under `backend/temp/<camera-id>/`. Each file is named `{camera-uuid}_{YYYYMMDDTHHMMSS}Z.mp4` (camera ID + recording start). End time is start plus the segment duration (default 60s); parse with `app.services.segment_identity.parse_segment_path`. After a file is closed, a **basic integrity check** runs before later stages: complete MP4 (`ftyp` + `moov`), a video stream (ffprobe), and a SHA-256 fingerprint. Failed files stay in `temp/` and are not handed on. **Passing files stay under `temp/<camera-id>/` until processing succeeds.** Temp files are **deleted only after processing succeeds**; processing failures stay on disk and are retried. IPFS / chain / DB is still a stub, so this ingest path does not delete on staging-only success. Soft-deleted cameras are skipped.
+Receive the **live `stream_url`** of a registered camera with FFmpeg (HTTP/HTTPS or RTSP) and split it into **1-minute `.mp4` segments** under `backend/temp/<camera-id>/`. Each file is named `{camera-uuid}_{YYYYMMDDTHHMMSS}Z.mp4` (camera ID + recording start). End time is start plus the segment duration (default 60s); parse with `app.services.segment_identity.parse_segment_path`. After a file is closed, a **basic integrity check** runs before later stages: complete MP4 (`ftyp` + `moov`), a video stream (ffprobe), and a SHA-256 fingerprint. Failed files stay in `temp/` and are not handed on. **Passing files stay under `temp/<camera-id>/` until Pinata, chain anchor, and DB save succeed.** Temp files are **deleted only after that succeeds**; failures stay on disk and are retried. Soft-deleted cameras are skipped. Set `PINATA_JWT`, `DATACHAIN_CONTRACT_ADDRESS`, and `DATACHAIN_PRIVATE_KEY` (or `AMOY_PRIVATE_KEY`). Apply Alembic through `20260914_000004`.
 
 If FFmpeg exits unexpectedly, ingest **restarts it** (delay `CCTV_FFMPEG_RESTART_DELAY_SECONDS`, default 2s) up to **`CCTV_FFMPEG_MAX_RESTARTS` (default 10 for camera ingest)**. Each attempt is logged with the camera id. After the cap, ingest stops and sets **`ingest_offline_at`** so the camera shows **offline** on the dashboard even if the URL still answers a probe (`offline_reason`: `ingest_failed`). A later ingest run clears that flag when it starts. Apply Alembic revision `20260824_000003`.
 
@@ -219,7 +219,7 @@ Optional flags: `--temp-dir DIR`, `--duration SECONDS` (default **60**), or env 
 
 After a chunk is **successfully processed**, a background worker **deletes it from `temp/`** so disk use stays bounded. Epic 6 will replace the stub processor with IPFS upload + chain anchor + DB write; until then the worker logs and deletes (stub success).
 
-This Epic 5 file-chunk path is separate from **camera ingest** (`ingest_camera.py`), which **stages** segments under `temp/<camera-id>/` until processing succeeds. Ingest **deletes a temp file only after processing succeeds** and keeps failed / retry files; the current ingest processor is still a stub, so those files are not deleted yet.
+This Epic 5 file-chunk path is separate from **camera ingest** (`ingest_camera.py`), which uploads to Pinata, anchors on-chain, saves `video_records`, then deletes the temp file.
 
 **With chunking** — process and delete each segment as it lands:
 
@@ -247,7 +247,7 @@ Implementation: `backend/app/services/ffmpeg_supervisor.py` (shared by feed simu
 
 ## Pinata IPFS upload (Slice D / CP-D.P1)
 
-Upload **one** local `.mp4` segment to Pinata and print its **CID**. Camera ingest does **not** call this yet.
+Upload **one** local `.mp4` segment to Pinata and print its **CID**. Camera ingest also calls this after each integrity-checked minute.
 
 1. Create a Pinata JWT (API key with pinning). Put it in `backend/.env` as `PINATA_JWT` (never commit it).
 2. From `backend/` with the venv activated (`pip install -r requirements.txt` if you just pulled):
@@ -260,7 +260,7 @@ Optional `PINATA_TIMEOUT_SECONDS` (default **120**). Implementation: `app/servic
 
 ## Polygon Amoy anchor (Slice D / CP-D.P3)
 
-Send **one** `anchorSegment` transaction with **Web3.py**. RPC timeouts and gas/fee errors are **retried** (default 3 attempts). A failed anchor raises; nothing in this helper deletes a temp file. Camera ingest does **not** call this yet.
+Send **one** `anchorSegment` transaction with **Web3.py**. RPC timeouts and gas/fee errors are **retried** (default 3 attempts). A failed anchor raises; ingest keeps the temp file. Camera ingest calls this after a successful Pinata CID.
 
 Set `DATACHAIN_CONTRACT_ADDRESS` (from `npm run deploy:amoy`) and `DATACHAIN_PRIVATE_KEY` (the **owner** / deployer testnet key). Optional: `POLYGON_RPC_URL`, `ANCHOR_MAX_ATTEMPTS`.
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """CLI: receive registered camera streams and write 1-minute MP4 segments.
 
-Segments are staged under temp/<camera-id>/ until processing succeeds.
-Temp files are deleted only after processing succeeds; failures stay for retry.
+Integrity-checked minutes are uploaded to Pinata, anchored on Polygon, and
+saved in PostgreSQL. Temp files are deleted only after that succeeds.
 Unexpected FFmpeg stops restart up to a cap; then the camera is marked offline.
 
 Run from backend/ with the venv activated and Postgres available:
