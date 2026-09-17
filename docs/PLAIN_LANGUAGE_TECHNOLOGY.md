@@ -272,7 +272,7 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** Integrity is something a user can check themselves: the page loads each minute’s CID and hash from the API, then asks the smart contract for the same fields and compares them. A green **Verified** badge means they match; a red **Tampered** badge means they do not. If the RPC node cannot be reached, the result is **Failed to verify**, not tampered.
 
-**Where it shows up:** `frontend/lib/verify-chain.ts`, `frontend/lib/datachain-abi.ts`, camera recordings Verify UI (`frontend/components/camera-recordings.tsx`). RPC is proxied at `/amoy-rpc` (see `frontend/next.config.ts` and `frontend/.env.example`).
+**Where it shows up:** `frontend/lib/verify-chain.ts`, `frontend/lib/datachain-abi.ts`, camera recordings Verify UI (`frontend/components/camera-recordings.tsx`). After each in-browser report, the page POSTs the outcome for the audit trail (`frontend/lib/verification-api.ts`). RPC is proxied at `/amoy-rpc` (see `frontend/next.config.ts` and `frontend/.env.example`).
 
 ### Development mocks for IPFS and blockchain (later slices)
 
@@ -284,4 +284,4 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 ### Technologies on the roadmap but not fully in the repo yet
 
-The product vision still needs remaining Slice E work (verification audit log). Ingest can use a maintainer-deployed Amoy contract address.
+The product vision still has **CP-E.P11** deferred (rebuild DB references from chain/IPFS). Ingest can use a maintainer-deployed Amoy contract address.

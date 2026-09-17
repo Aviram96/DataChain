@@ -111,6 +111,8 @@ alembic downgrade -1
 
 `video_records` (Slice D / **CP-D.P6**, Alembic `20260914_000004`): one row per minute with camera id, start/end, `ipfs_cid`, SHA-256 `segment_hash`, and optional `tx_hash` (null until the chain tx succeeds). Unique `(camera_id, started_at)`. Ingest does not insert rows yet.
 
+Verification audit trail (Slice E / **CP-E.P8**, Alembic `20260917_000005`): `verification_attempts` plus per-minute child rows. See **Verification attempts** below.
+
 ## Camera online/offline (Slice B / CP-B.P4)
 
 List and detail responses include a **`status`** field: `"online"` or `"offline"`. Status is **offline** if either:
@@ -159,6 +161,12 @@ Optional overlap window (ISO-8601):
 Both set: end must be after start (HTTP **400** otherwise). The camera detail page sends a local date plus start/end times as UTC ISO values.
 
 `GET /cameras/{id}/recordings/download` (CP-E.P10) requires **`started_at` and `ended_at`**. It fetches overlapping minutes from the IPFS HTTP gateway (oldest first), concatenates them with **FFmpeg** (`-c copy`) into one `.mp4`, and returns that file. Owner 404 matches the list. Empty range: **404**. More than 24 hours of minutes: **400**. Gateway or concat failure: **502** (FFmpeg missing: **503**). Optional `IPFS_GATEWAY` (default `https://gateway.pinata.cloud`). FFmpeg must be on PATH.
+
+### Verification attempts (Slice E / CP-E.P8)
+
+`POST /cameras/{id}/verification-attempts` stores the **in-browser** Verify report (overall status, window, scope `full` | `partial` | `minute`, and per-minute rows). The API does **not** call `getSegment` or re-check the chain. Owner 404 matches recordings. Inverted window: **400**. More than 24 hours of minutes, empty minutes, or invalid scope/status: **422**. Persist is additive (an audit trail, not a replacement of the on-screen result).
+
+`GET /cameras/{id}/verification-attempts` is a thin paginated list of attempt headers (newest first; same `page` / `page_size` as recordings). Apply Alembic `20260917_000005`.
 
 ### Soft delete and unique names
 

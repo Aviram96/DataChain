@@ -203,7 +203,7 @@ _(Users consume results via playback and verification in Slice E; anchoring itse
 
 | ID | Story | Status |
 | -- | ----- | ------ |
-| CP-E.C1 | As a user, I want a dedicated camera page with details and video-related actions. | Implemented — `/cameras/[id]` details plus recordings search; Watch, Download, and Verify enabled |
+| CP-E.C1 | As a user, I want a dedicated camera page with details and video-related actions. | Implemented — `/cameras/[id]` details plus recordings search; Watch, Download, Verify, and verification history |
 | CP-E.C2 | As a user, I want a video management area for that camera to search, watch, download, and verify recordings. | Implemented — search/list/watch/verify/download on the camera page |
 | CP-E.C3 | As a user, I want to select a date and a start/end time for a camera, so I can find the recordings I care about. | Implemented — date + start/end filters call `GET /cameras/{id}/recordings` |
 | CP-E.C4 | As a user, I want search results presented clearly, so I can choose watch, download, or verify. | Implemented — per-minute rows; Watch, Download, and Verify enabled |
@@ -229,7 +229,7 @@ _(Users consume results via playback and verification in Slice E; anchoring itse
 | CP-E.P5 | As the system, I want to compare each segment against stored hash, CID, and blockchain proof (cross-source consistency). | Implemented — ethers.js `getSegment` vs API CID, hash, camera id, start/end |
 | CP-E.P6 | As the system, I want to classify segment results into clear statuses for the UI. | Implemented — Verified / Tampered / Missing / Failed to verify |
 | CP-E.P7 | As the system, I want to aggregate segment results into one overall status for the selected range. | Implemented — Tampered > Failed to verify > Missing > Verified |
-| CP-E.P8 | As the system, I want to record verification attempts and outcomes for an audit trail. | TBD |
+| CP-E.P8 | As the system, I want to record verification attempts and outcomes for an audit trail. | Implemented — after the in-browser report, `POST /cameras/{id}/verification-attempts` stores header + per-minute rows; compact history on `/cameras/[id]`. Persist failure is a toast, not tampered. |
 | CP-E.P9 | As the system, I want to map a partial time range to overlapping one-minute segments for partial verify. | Implemented — `clipSubRange` plus `expectedMinuteStarts` on the inner window |
 | CP-E.P10 | As the system, I want to combine selected one-minute segments into one downloadable file for the chosen range. | Implemented — gateway fetch + FFmpeg concat (`-c copy`); max 24 hours of minutes |
 | CP-E.P11 | As the system, I want a path to recover segment references from blockchain/IPFS when the DB is unavailable or corrupted. | Deferred — rebuild DB from chain is out of current slices |
@@ -293,3 +293,4 @@ Add here only if the teacher requires them in the client–programmer pack.
 | 2026-09-17 | Slice E3: CP-E.C7 / C9–C12 and CP-E.P3–P7 Implemented (full-range verify via ethers.js); CP-D.C1 Implemented. |
 | 2026-09-17 | Slice E4: CP-E.C8 / P9 Implemented (verify a sub-range inside the searched recording). |
 | 2026-09-17 | Slice E5: CP-E.C6 / P10 Implemented (download range as one MP4); CP-E.C2 Implemented. |
+| 2026-09-17 | Slice E6: CP-E.P8 Implemented (persist Verify / Verify part / per-row Verify as an audit trail). |

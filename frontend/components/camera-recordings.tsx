@@ -12,6 +12,7 @@ import {
   type VideoRecordPublic,
 } from "@/lib/recordings-api";
 import { ui } from "@/lib/ui";
+import { createVerificationAttempt } from "@/lib/verification-api";
 import { createDatachainContract, mapPool, readChainSegment } from "@/lib/verify-chain";
 import {
   aggregateStatus,
@@ -26,6 +27,7 @@ import {
 
 import { RecordingVerifyPanel, VerifyBadge } from "./recording-verify-panel";
 import { useToast } from "./toast-provider";
+import { VerificationHistory } from "./verification-history";
 
 const PAGE_SIZE = 10;
 
@@ -51,6 +53,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   const [verifying, setVerifying] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [verifyReport, setVerifyReport] = useState<VerifyReport | null>(null);
+  const [historyTick, setHistoryTick] = useState(0);
   const [partialStart, setPartialStart] = useState("");
   const [partialEnd, setPartialEnd] = useState("");
   const playbackErrorFor = useRef<string | null>(null);
@@ -150,7 +153,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   async function runVerify(
     range: { startedAt: string; endedAt: string },
     recordsOverride?: VideoRecordPublic[],
-    scope: VerifyReport["scope"] = "full"
+    scope: "full" | "partial" | "minute" = "full"
   ) {
     const slots = expectedMinuteStarts(range.startedAt, range.endedAt);
     if (slots.length === 0) {
@@ -198,11 +201,36 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
         };
         return minute;
       });
-      setVerifyReport({
+      const report: VerifyReport = {
         overall: aggregateStatus(results.map((result) => result.status)),
         results,
         scope,
-      });
+      };
+      setVerifyReport(report);
+      try {
+        await createVerificationAttempt(cameraId, {
+          started_at: range.startedAt,
+          ended_at: range.endedAt,
+          scope,
+          overall_status: report.overall,
+          minutes: results.map((result) => ({
+            started_at: result.slotIso,
+            status: result.status,
+            detail: result.detail,
+            video_record_id: result.record?.id ?? null,
+          })),
+        });
+        setHistoryTick((tick) => tick + 1);
+      } catch (persistError) {
+        if (persistError instanceof CamerasApiError) {
+          showToast(persistError.message, "error");
+        } else {
+          showToast(
+            "Could not save this verification to the audit trail.",
+            "error"
+          );
+        }
+      }
     } catch (error) {
       if (error instanceof CamerasApiError) {
         showToast(error.message, "error");
@@ -545,6 +573,8 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
           </div>
         </div>
       ) : null}
+
+      <VerificationHistory cameraId={cameraId} refreshKey={historyTick} />
 
       {watching ? (
         <RecordingPlayer

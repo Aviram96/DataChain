@@ -40,7 +40,7 @@ By default, the dev server proxies **`/api/*`** → `http://127.0.0.1:8000/*` (s
 
 If `NEXT_PUBLIC_IPFS_GATEWAY` is unset, the app uses `https://gateway.pinata.cloud`. Set a dedicated gateway origin (no trailing slash, no `/ipfs` suffix) when you have one.
 
-**Verify (CP-E.C7 / C8):** the camera page compares expected minutes’ API CID/hash/times to on-chain `getSegment` via **ethers.js**. **Verify** checks the whole searched range; **Verify part** checks a tighter start/end inside that range. The browser calls same-origin **`/amoy-rpc`**, rewritten to `NEXT_PUBLIC_POLYGON_RPC_URL` (default `https://polygon-amoy.drpc.org`). Contract default is the live Amoy Datachain address; override with `NEXT_PUBLIC_DATACHAIN_CONTRACT_ADDRESS` if you redeploy. Transaction hashes open on Polygonscan (`NEXT_PUBLIC_POLYGONSCAN_TX_BASE`). Restart `npm run dev` after changing `NEXT_PUBLIC_*` values.
+**Verify (CP-E.C7 / C8 / P8):** the camera page compares expected minutes’ API CID/hash/times to on-chain `getSegment` via **ethers.js**. **Verify** checks the whole searched range; **Verify part** checks a tighter start/end inside that range. After the on-screen report exists, the browser **POSTs** it to `/cameras/{id}/verification-attempts` (audit trail; a save failure is a toast, not Tampered). Compact history is on the same camera page. The browser calls same-origin **`/amoy-rpc`**, rewritten to `NEXT_PUBLIC_POLYGON_RPC_URL` (default `https://polygon-amoy.drpc.org`). Contract default is the live Amoy Datachain address; override with `NEXT_PUBLIC_DATACHAIN_CONTRACT_ADDRESS` if you redeploy. Transaction hashes open on Polygonscan (`NEXT_PUBLIC_POLYGONSCAN_TX_BASE`). Restart `npm run dev` after changing `NEXT_PUBLIC_*` values.
 
 **Download (CP-E.C6):** **Download** asks the API to fetch overlapping minutes from the IPFS gateway and combine them with FFmpeg into one `.mp4`. Use the search range, **Download part**, or a per-row Download. The backend needs FFmpeg on PATH.
 
@@ -67,7 +67,7 @@ Quick API check: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health) sh
 - `/register` — Sign up (error toast on duplicate email)
 - Header (app pages) — When signed in: **Signed in as** email + **Log out**; when signed out: Log in / Sign up
 - `/cameras` — Camera dashboard (main app surface after auth)
-- `/cameras/new`, `/cameras/[id]`, `/cameras/[id]/edit` — add, detail (recordings search, Watch, Verify, Download), edit
+- `/cameras/new`, `/cameras/[id]`, `/cameras/[id]/edit` — add, detail (recordings search, Watch, Verify, Download, verification history), edit
 - Camera **Online/Offline** badge; when ingest hits the FFmpeg restart cap, `offline_reason` is `ingest_failed`, `ingest_offline_at` is set, and the card/detail explain that footage may be missing **since** that time (CP-C.C1)
 - `/project-status` — Internal/dev status page (not linked from landing)
 
