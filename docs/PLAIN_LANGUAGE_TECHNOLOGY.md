@@ -272,7 +272,7 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** Local and college environments can stay secret-free. Unit tests already **mock HTTP** for Pinata; a `MOCK_IPFS` runtime flag is still later.
 
-**Where it shows up:** `backend/tests/test_pinata_ipfs.py`, `backend/tests/test_chain_anchor.py`. Runtime mocks are **not** in the repo yet.
+**Where it shows up:** `backend/tests/test_pinata_ipfs.py`, `backend/tests/test_chain_anchor.py`, mocked pipeline in `backend/tests/test_ingest_ipfs_chain_db.py`. Runtime mocks are **not** in the repo yet.
 
 ### Technologies on the roadmap but not fully in the repo yet
 

@@ -286,6 +286,12 @@ From `backend/` with dev dependencies installed:
 pytest -q
 ```
 
+Slice D mocked integration (CP-D.P9): Pinata HTTP and the Web3 send path are faked; the CID and tx hash on the chain request must match `video_records`.
+
+```bash
+pytest -q tests/test_ingest_ipfs_chain_db.py
+```
+
 ## Lint and format
 
 From `backend/` with dev dependencies installed:

@@ -186,7 +186,7 @@ _(Users consume results via playback and verification in Slice E; anchoring itse
 | CP-D.P6 | As the backend, I want each finalized segment stored in PostgreSQL with camera ID, start time, end time, IPFS CID, segment hash, and transaction hash. | Implemented — `persist_video_record` from ingest after CID + tx hash |
 | CP-D.P7 | As the system, I want anchoring failures detected so a segment is not treated as fully proven before a successful on-chain proof. | Implemented — ingest returns False (keeps temp, no DB row) until a tx hash exists |
 | CP-D.P8 | As a developer, I want contract tests that store and return camera ID, CID, segment hash, start time, and end time. | Implemented — `contracts/test/Datachain.ts` |
-| CP-D.P9 | As a developer, I want an integration test for IPFS upload → chain anchor → PostgreSQL save with consistent CID and tx hash. | TBD |
+| CP-D.P9 | As a developer, I want an integration test for IPFS upload → chain anchor → PostgreSQL save with consistent CID and tx hash. | Implemented — mocked Pinata HTTP + `anchor_segment` send path; CID/tx match DB |
 
 
 ### Slice D notes (from draft)
@@ -287,3 +287,4 @@ Add here only if the teacher requires them in the client–programmer pack.
 | 2026-09-14 | CP-D.P3 Implemented — Web3.py `anchor_segment` with RPC timeout / gas retry; ingest not wired. |
 | 2026-09-15 | Ingest wires Pinata + chain + DB (`ingest_segment_processor`); CP-D.P1 / P6 / P7 Implemented; CP-D.P2 still Partial (live Amoy). |
 | 2026-09-17 | CP-D.P5 Implemented — Web3.py `get_segment` / `getSegment` (mocked tests; no DB). CP-D.P2 Implemented (live Amoy proven by maintainer). |
+| 2026-09-17 | CP-D.P9 Implemented — mocked integration test CID → tx → `video_records` (`test_ingest_ipfs_chain_db.py`). |

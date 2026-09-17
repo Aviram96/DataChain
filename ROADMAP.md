@@ -141,7 +141,7 @@ Keep the **Status** column in this table aligned with the repository as work lan
 
 **Exit criteria**: End-to-end path from chunk file → CID → tx → DB row; contract address and ABI versioned for frontend verification.
 
-**Progress note**: Ingest wires Pinata → `anchorSegment` → `video_records` (`ingest_segment_processor.py`) as of 2026-09-15. **US-6.6** live Amoy deploy is maintainer-run (proven). See **CP-D.P1 / P2 / P3 / P4 / P5 / P6 / P7 / P8** Implemented. **CP-D.P9** TBD.
+**Progress note**: Ingest wires Pinata → `anchorSegment` → `video_records` (`ingest_segment_processor.py`) as of 2026-09-15. **US-6.6** live Amoy deploy is maintainer-run (proven). **CP-D.P1–P9** Implemented (P9 is a mocked CID → tx → DB integration test).
 
 ---
 
@@ -205,6 +205,8 @@ Keep the **Status** column in this table aligned with the repository as work lan
 
 **Exit criteria**: CI runs unit suites; integration test runnable locally with documented env (test keys, testnet faucet).
 
+**Progress note**: **US-9.5 / US-9.6** covered in mocked form by **CP-D.P9** (`backend/tests/test_ingest_ipfs_chain_db.py`): Pinata HTTP and the Web3 send path are faked; live testnet keys remain optional.
+
 ---
 
 ## Epic 10: Academic Deliverables (Project Book)
@@ -239,13 +241,13 @@ Epics **1–10** above remain historical delivery notes for the original roadmap
 | A | Register and Login | Done — all CP-A stories Implemented (see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`) |
 | B | Camera dashboard management | Done — all CP-B stories Implemented (search/filter/sort, soft delete, unique names, detail page) |
 | C | Video processing pipeline | Done — CP-C.P1–P8 and CP-C.C1 Implemented |
-| D | IPFS storage and blockchain anchoring | In progress — CP-D.P1 / P2 / P3 / P4 / P5 / P6 / P7 / P8 Implemented; CP-D.P9 TBD |
+| D | IPFS storage and blockchain anchoring | In progress — CP-D.P1–P9 Implemented; CP-D.C1 TBD (Slice E verification UI) |
 | E | Video management and verification | Not started — all stories TBD |
 
 
 **Exit criteria**: Every story in `docs/CLIENT_PROGRAMMER_USER_STORIES.md` is Implemented, Deferred (with reason), or explicitly Declined; open decisions in that file are resolved.
 
-**Progress note**: Slice A complete 2026-07-21 (including landing refinement: toolbar-free home, problem/solution, signed-in → `/cameras`). Slice B complete 2026-07-21 — apply Alembic revision `20260721_000002` for `deleted_at` + unique active name. Slice C complete 2026-09-09 — **CP-C.P1–P8** (simulate feed, receive stream, 1-minute chunks, camera+time filenames, pre-stage integrity check, stage under `temp/` until processing succeeds, delete temp files only after processing success, capped FFmpeg restart + ingest offline) and **CP-C.C1** (`offline_reason` `ingest_failed` vs `unreachable`; `ingest_offline_at` on the API so the card/detail can say **since** capture stopped); apply Alembic `20260824_000003` for `ingest_offline_at`; see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`. Slice D started 2026-09-14; ingest Pinata + chain + DB wired 2026-09-15 (`ingest_segment_processor.py`). **CP-D.P2** Implemented (live Amoy proven by maintainer). **CP-D.P5** Implemented 2026-09-17 (`get_segment`). **CP-D.P9** TBD.
+**Progress note**: Slice A complete 2026-07-21 (including landing refinement: toolbar-free home, problem/solution, signed-in → `/cameras`). Slice B complete 2026-07-21 — apply Alembic revision `20260721_000002` for `deleted_at` + unique active name. Slice C complete 2026-09-09 — **CP-C.P1–P8** (simulate feed, receive stream, 1-minute chunks, camera+time filenames, pre-stage integrity check, stage under `temp/` until processing succeeds, delete temp files only after processing success, capped FFmpeg restart + ingest offline) and **CP-C.C1** (`offline_reason` `ingest_failed` vs `unreachable`; `ingest_offline_at` on the API so the card/detail can say **since** capture stopped); apply Alembic `20260824_000003` for `ingest_offline_at`; see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`. Slice D started 2026-09-14; ingest Pinata + chain + DB wired 2026-09-15 (`ingest_segment_processor.py`). **CP-D.P1–P9** Implemented as of 2026-09-17; **CP-D.C1** TBD (experienced in Slice E).
 
 ---
 
