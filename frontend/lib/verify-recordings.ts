@@ -31,6 +31,12 @@ export type VerifyMinuteResult = {
 export type VerifyReport = {
   overall: VerifyStatus;
   results: VerifyMinuteResult[];
+  scope?: "full" | "partial" | "minute";
+};
+
+export type TimeWindow = {
+  startedAt: string;
+  endedAt: string;
 };
 
 export function expectedMinuteStarts(
@@ -50,6 +56,31 @@ export function expectedMinuteStarts(
     }
   }
   return starts;
+}
+
+/** Keep a sub-range only when it sits fully inside the selected recording window (CP-E.P9). */
+export function clipSubRange(
+  parent: TimeWindow,
+  sub: TimeWindow
+): TimeWindow | "outside" | "invalid" {
+  const parentStart = Date.parse(parent.startedAt);
+  const parentEnd = Date.parse(parent.endedAt);
+  const subStart = Date.parse(sub.startedAt);
+  const subEnd = Date.parse(sub.endedAt);
+  if (
+    !Number.isFinite(parentStart) ||
+    !Number.isFinite(parentEnd) ||
+    !Number.isFinite(subStart) ||
+    !Number.isFinite(subEnd) ||
+    parentEnd <= parentStart ||
+    subEnd <= subStart
+  ) {
+    return "invalid";
+  }
+  if (subStart < parentStart || subEnd > parentEnd) {
+    return "outside";
+  }
+  return sub;
 }
 
 export function findRecordForSlot(

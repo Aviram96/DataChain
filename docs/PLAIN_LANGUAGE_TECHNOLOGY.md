@@ -284,4 +284,4 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 ### Technologies on the roadmap but not fully in the repo yet
 
-The product vision still needs remaining Slice E work (partial-range verify, download, verification audit log). Ingest can use a maintainer-deployed Amoy contract address.
+The product vision still needs remaining Slice E work (download as one file, verification audit log). Ingest can use a maintainer-deployed Amoy contract address.

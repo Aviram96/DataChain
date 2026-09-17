@@ -204,13 +204,13 @@ _(Users consume results via playback and verification in Slice E; anchoring itse
 | ID | Story | Status |
 | -- | ----- | ------ |
 | CP-E.C1 | As a user, I want a dedicated camera page with details and video-related actions. | Implemented — `/cameras/[id]` details plus recordings search; Watch and Verify enabled; Download still disabled |
-| CP-E.C2 | As a user, I want a video management area for that camera to search, watch, download, and verify recordings. | Partial — search/list/watch/full-range verify; download later (E5); partial-range verify later (E4) |
+| CP-E.C2 | As a user, I want a video management area for that camera to search, watch, download, and verify recordings. | Partial — search/list/watch/full-range and partial-range verify; download later (E5) |
 | CP-E.C3 | As a user, I want to select a date and a start/end time for a camera, so I can find the recordings I care about. | Implemented — date + start/end filters call `GET /cameras/{id}/recordings` |
 | CP-E.C4 | As a user, I want search results presented clearly, so I can choose watch, download, or verify. | Implemented — per-minute rows; Watch and Verify enabled; Download disabled until E5 |
 | CP-E.C5 | As a user, I want to watch the selected recording (time range / segments). | Implemented — Watch on a row plays that minute from `{NEXT_PUBLIC_IPFS_GATEWAY}/ipfs/{cid}`; a search range is still one player per minute |
 | CP-E.C6 | As a user, I want to download the selected recording as a usable local file. | TBD |
 | CP-E.C7 | As a user, I want to verify the entire selected recording. | Implemented — Verify on the applied date/time range checks every expected minute (ethers.js `getSegment` vs API); per-row Verify checks that minute |
-| CP-E.C8 | As a user, I want to verify only part of a selected recording (sub-range). | TBD |
+| CP-E.C8 | As a user, I want to verify only part of a selected recording (sub-range). | Implemented — after a search range, **Verify part** checks only expected minutes overlapping that inner window |
 | CP-E.C9 | As a user, I want a clear verification result: authentic, modified, missing, or failed to verify. | Implemented — Verified, Tampered, Missing, Failed to verify (RPC — not tampered) |
 | CP-E.C10 | As a user, I want a green Verified badge when DB metadata, IPFS CID, and blockchain record match. | Implemented — green Verified when CID, hash, and times match `getSegment` |
 | CP-E.C11 | As a user, I want a red Tampered warning when metadata does not match the blockchain proof. | Implemented — red Tampered when chain disagrees or the app row has no on-chain proof |
@@ -230,7 +230,7 @@ _(Users consume results via playback and verification in Slice E; anchoring itse
 | CP-E.P6 | As the system, I want to classify segment results into clear statuses for the UI. | Implemented — Verified / Tampered / Missing / Failed to verify |
 | CP-E.P7 | As the system, I want to aggregate segment results into one overall status for the selected range. | Implemented — Tampered > Failed to verify > Missing > Verified |
 | CP-E.P8 | As the system, I want to record verification attempts and outcomes for an audit trail. | TBD |
-| CP-E.P9 | As the system, I want to map a partial time range to overlapping one-minute segments for partial verify. | TBD |
+| CP-E.P9 | As the system, I want to map a partial time range to overlapping one-minute segments for partial verify. | Implemented — `clipSubRange` plus `expectedMinuteStarts` on the inner window |
 | CP-E.P10 | As the system, I want to combine selected one-minute segments into one downloadable file for the chosen range. | TBD |
 | CP-E.P11 | As the system, I want a path to recover segment references from blockchain/IPFS when the DB is unavailable or corrupted. | Deferred — rebuild DB from chain is out of current slices |
 
@@ -291,3 +291,4 @@ Add here only if the teacher requires them in the client–programmer pack.
 | 2026-09-17 | Slice E started: CP-E.C1 / C3 / C4 and CP-E.P1 / P2 Implemented; CP-E.C2 Partial (search/list; watch/download/verify later). |
 | 2026-09-17 | Slice E2: CP-E.C5 Implemented (Watch from IPFS gateway); CP-E.C2 Partial (watch yes; download/verify later). |
 | 2026-09-17 | Slice E3: CP-E.C7 / C9–C12 and CP-E.P3–P7 Implemented (full-range verify via ethers.js); CP-D.C1 Implemented. |
+| 2026-09-17 | Slice E4: CP-E.C8 / P9 Implemented (verify a sub-range inside the searched recording). |

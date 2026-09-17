@@ -21,6 +21,11 @@ export function RecordingVerifyPanel({ report }: RecordingVerifyPanelProps) {
         <VerifyBadge status={report.overall} />
       </div>
       <p className={`mt-2 ${ui.muted}`}>{overallCopy(report.overall)}</p>
+      {report.scope === "partial" ? (
+        <p className={`mt-1 ${ui.hint}`}>
+          Only the chosen part of the selected range was checked.
+        </p>
+      ) : null}
       <p className={`mt-1 ${ui.hint}`}>
         {report.results.length} minute
         {report.results.length === 1 ? "" : "s"} checked

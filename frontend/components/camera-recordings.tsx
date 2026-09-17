@@ -15,6 +15,7 @@ import { createDatachainContract, mapPool, readChainSegment } from "@/lib/verify
 import {
   aggregateStatus,
   classifySegment,
+  clipSubRange,
   expectedMinuteStarts,
   findRecordForSlot,
   MAX_EXPECTED_MINUTES,
@@ -50,6 +51,8 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   const [watching, setWatching] = useState<VideoRecordPublic | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [verifyReport, setVerifyReport] = useState<VerifyReport | null>(null);
+  const [partialStart, setPartialStart] = useState("");
+  const [partialEnd, setPartialEnd] = useState("");
   const playbackErrorFor = useRef<string | null>(null);
 
   const load = useCallback(
@@ -87,6 +90,17 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
 
   useEffect(() => {
     setVerifyReport(null);
+    if (applied.startedAt && applied.endedAt) {
+      setPartialStart(isoToLocalTime(applied.startedAt));
+      setPartialEnd(
+        isoToLocalDate(applied.endedAt) === isoToLocalDate(applied.startedAt)
+          ? isoToLocalTime(applied.endedAt)
+          : "23:59"
+      );
+    } else {
+      setPartialStart("");
+      setPartialEnd("");
+    }
   }, [applied, cameraId]);
 
   function applySearch(event: FormEvent) {
@@ -135,7 +149,8 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
 
   async function runVerify(
     range: { startedAt: string; endedAt: string },
-    recordsOverride?: VideoRecordPublic[]
+    recordsOverride?: VideoRecordPublic[],
+    scope: VerifyReport["scope"] = "full"
   ) {
     const slots = expectedMinuteStarts(range.startedAt, range.endedAt);
     if (slots.length === 0) {
@@ -186,6 +201,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
       setVerifyReport({
         overall: aggregateStatus(results.map((result) => result.status)),
         results,
+        scope,
       });
     } catch (error) {
       if (error instanceof CamerasApiError) {
@@ -209,13 +225,54 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
     void runVerify({
       startedAt: applied.startedAt,
       endedAt: applied.endedAt,
-    });
+    }, undefined, "full");
+  }
+
+  function verifyPartialRange() {
+    if (!applied.startedAt || !applied.endedAt) {
+      showToast(
+        "Choose a date and time range, then verify part of that recording.",
+        "error"
+      );
+      return;
+    }
+    if (!partialStart.trim() || !partialEnd.trim()) {
+      showToast(
+        "Choose a start and end time inside the searched range.",
+        "error"
+      );
+      return;
+    }
+    const date = isoToLocalDate(applied.startedAt);
+    const startedAt = localDateTimeToIso(date, partialStart);
+    const endedAt = localDateTimeToIso(date, partialEnd);
+    if (!startedAt || !endedAt || Date.parse(endedAt) <= Date.parse(startedAt)) {
+      showToast("Choose an end time after the start time.", "error");
+      return;
+    }
+    const clipped = clipSubRange(
+      { startedAt: applied.startedAt, endedAt: applied.endedAt },
+      { startedAt, endedAt }
+    );
+    if (clipped === "invalid") {
+      showToast("Choose an end time after the start time.", "error");
+      return;
+    }
+    if (clipped === "outside") {
+      showToast(
+        "Choose a start and end inside the searched date and time range.",
+        "error"
+      );
+      return;
+    }
+    void runVerify(clipped, undefined, "partial");
   }
 
   function verifyOne(record: VideoRecordPublic) {
     void runVerify(
       { startedAt: record.started_at, endedAt: record.ended_at },
-      [record]
+      [record],
+      "minute"
     );
   }
 
@@ -290,6 +347,51 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
           </button>
         </div>
       </form>
+
+      {applied.startedAt && applied.endedAt ? (
+        <div
+          className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end ${ui.panel}`}
+        >
+          <p className={`sm:col-span-2 lg:col-span-4 text-left ${ui.muted}`}>
+            Verify part of this range. Minutes outside the times below are not
+            checked.
+          </p>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="verify-part-start" className={ui.hint}>
+              Part start
+            </label>
+            <input
+              id="verify-part-start"
+              type="time"
+              value={partialStart}
+              onChange={(event) => setPartialStart(event.target.value)}
+              className={ui.input}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="verify-part-end" className={ui.hint}>
+              Part end
+            </label>
+            <input
+              id="verify-part-end"
+              type="time"
+              value={partialEnd}
+              onChange={(event) => setPartialEnd(event.target.value)}
+              className={ui.input}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={verifying}
+              onClick={verifyPartialRange}
+              className={ui.btnSecondary}
+            >
+              {verifying ? "Verifying…" : "Verify part"}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {verifyReport ? <RecordingVerifyPanel report={verifyReport} /> : null}
 
@@ -484,6 +586,21 @@ function localDateTimeToIso(date: string, time: string): string | null {
     return null;
   }
   return parsed.toISOString();
+}
+
+function isoToLocalDate(iso: string): string {
+  const parsed = new Date(iso);
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isoToLocalTime(iso: string): string {
+  const parsed = new Date(iso);
+  const hours = String(parsed.getHours()).padStart(2, "0");
+  const minutes = String(parsed.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
 }
 
 function formatWindow(startedAt: string, endedAt: string): string {
