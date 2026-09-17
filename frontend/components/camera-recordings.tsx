@@ -6,16 +6,28 @@ import { networkErrorMessage } from "@/lib/api";
 import { CamerasApiError } from "@/lib/cameras-api";
 import { ipfsGatewayUrl } from "@/lib/ipfs-gateway";
 import {
+  listAllRecordings,
   listRecordings,
   type VideoRecordPublic,
 } from "@/lib/recordings-api";
 import { ui } from "@/lib/ui";
+import { createDatachainContract, mapPool, readChainSegment } from "@/lib/verify-chain";
+import {
+  aggregateStatus,
+  classifySegment,
+  expectedMinuteStarts,
+  findRecordForSlot,
+  MAX_EXPECTED_MINUTES,
+  type VerifyMinuteResult,
+  type VerifyReport,
+} from "@/lib/verify-recordings";
 
+import { RecordingVerifyPanel, VerifyBadge } from "./recording-verify-panel";
 import { useToast } from "./toast-provider";
 
 const PAGE_SIZE = 10;
 
-const COMING_SOON = "Download and verify will be available in a later step.";
+const COMING_SOON = "Download will be available in a later step.";
 
 type CameraRecordingsProps = {
   cameraId: string;
@@ -36,6 +48,8 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [watching, setWatching] = useState<VideoRecordPublic | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyReport, setVerifyReport] = useState<VerifyReport | null>(null);
   const playbackErrorFor = useRef<string | null>(null);
 
   const load = useCallback(
@@ -70,6 +84,10 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   useEffect(() => {
     void load(page);
   }, [load, page]);
+
+  useEffect(() => {
+    setVerifyReport(null);
+  }, [applied, cameraId]);
 
   function applySearch(event: FormEvent) {
     event.preventDefault();
@@ -112,6 +130,92 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
     showToast(
       "Could not play this recording from IPFS. Check the gateway URL or try again.",
       "error"
+    );
+  }
+
+  async function runVerify(
+    range: { startedAt: string; endedAt: string },
+    recordsOverride?: VideoRecordPublic[]
+  ) {
+    const slots = expectedMinuteStarts(range.startedAt, range.endedAt);
+    if (slots.length === 0) {
+      showToast("Choose a date, then an end time after the start time.", "error");
+      return;
+    }
+    if (slots.length > MAX_EXPECTED_MINUTES) {
+      showToast("Choose a range of 24 hours or less to verify.", "error");
+      return;
+    }
+
+    setVerifying(true);
+    try {
+      const records =
+        recordsOverride ??
+        (await listAllRecordings(cameraId, {
+          startedAt: range.startedAt,
+          endedAt: range.endedAt,
+        }));
+      const contract = createDatachainContract();
+      const used = new Set<string>();
+      const slotWork = slots.map((slot) => {
+        const record = findRecordForSlot(records, slot) ?? null;
+        if (record) {
+          used.add(record.id);
+        }
+        return { slot, record };
+      });
+      const extras = records
+        .filter((record) => !used.has(record.id))
+        .map((record) => ({
+          slot: new Date(record.started_at),
+          record,
+        }));
+      const work = [...slotWork, ...extras];
+      const results = await mapPool(work, 4, async ({ slot, record }) => {
+        const startedAtIso = record?.started_at ?? slot.toISOString();
+        const chain = await readChainSegment(contract, cameraId, startedAtIso);
+        const classified = classifySegment({ cameraId, record, chain });
+        const minute: VerifyMinuteResult = {
+          slotIso: startedAtIso,
+          status: classified.status,
+          detail: classified.detail,
+          record,
+        };
+        return minute;
+      });
+      setVerifyReport({
+        overall: aggregateStatus(results.map((result) => result.status)),
+        results,
+      });
+    } catch (error) {
+      if (error instanceof CamerasApiError) {
+        showToast(error.message, "error");
+      } else {
+        showToast(networkErrorMessage(), "error");
+      }
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  function verifyAppliedRange() {
+    if (!applied.startedAt || !applied.endedAt) {
+      showToast(
+        "Choose a date and time range, then verify that recording.",
+        "error"
+      );
+      return;
+    }
+    void runVerify({
+      startedAt: applied.startedAt,
+      endedAt: applied.endedAt,
+    });
+  }
+
+  function verifyOne(record: VideoRecordPublic) {
+    void runVerify(
+      { startedAt: record.started_at, endedAt: record.ended_at },
+      [record]
     );
   }
 
@@ -173,11 +277,21 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
           <button type="submit" className={ui.btnPrimary}>
             Search
           </button>
+          <button
+            type="button"
+            disabled={verifying}
+            onClick={verifyAppliedRange}
+            className={ui.btnSecondary}
+          >
+            {verifying ? "Verifying…" : "Verify"}
+          </button>
           <button type="button" onClick={clearSearch} className={ui.btnSecondary}>
             Clear
           </button>
         </div>
       </form>
+
+      {verifyReport ? <RecordingVerifyPanel report={verifyReport} /> : null}
 
       {loading ? (
         <p className={ui.muted}>Loading recordings…</p>
@@ -185,13 +299,18 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
         <p className={`${ui.panelMuted} text-left`}>{emptyMessage}</p>
       ) : (
         <ul className="space-y-3">
-          {items.map((record) => (
-            <li key={record.id} className={ui.panel}>
+          {items.map((record) => {
+            const rowStatus = statusForRecord(verifyReport, record.id);
+            return (
+              <li key={record.id} className={ui.panel}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 space-y-1">
-                  <p className="font-medium text-landing-ink">
-                    {formatWindow(record.started_at, record.ended_at)}
-                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-medium text-landing-ink">
+                      {formatWindow(record.started_at, record.ended_at)}
+                    </p>
+                    {rowStatus ? <VerifyBadge status={rowStatus} /> : null}
+                  </div>
                   <p className={`break-all ${ui.hint}`}>CID {record.ipfs_cid}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -212,8 +331,8 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
                   </button>
                   <button
                     type="button"
-                    disabled
-                    title={COMING_SOON}
+                    disabled={verifying}
+                    onClick={() => verifyOne(record)}
                     className={ui.btnCompact}
                   >
                     Verify
@@ -221,7 +340,8 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
                 </div>
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
 
@@ -370,4 +490,8 @@ function formatWindow(startedAt: string, endedAt: string): string {
   const start = new Date(startedAt);
   const end = new Date(endedAt);
   return `${start.toLocaleString()} – ${end.toLocaleTimeString()}`;
+}
+
+function statusForRecord(report: VerifyReport | null, recordId: string) {
+  return report?.results.find((result) => result.record?.id === recordId)?.status;
 }

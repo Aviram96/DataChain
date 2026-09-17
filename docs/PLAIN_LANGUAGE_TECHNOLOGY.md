@@ -264,7 +264,15 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** The backend must record each minute’s CID and hash on-chain. If the RPC times out or gas is too low, the write helper **retries** and **does not treat the segment as proven**; the temp file can stay for another attempt. A separate **read** helper can load the same metadata from the contract **without PostgreSQL**.
 
-**Where it shows up:** `backend/app/services/chain_anchor.py` (`anchor_segment`, `get_segment`), `backend/scripts/anchor_segment.py`, ingest via `ingest_segment_processor.py`, ABI in `backend/app/contracts/datachain_abi.py`.
+**Where it shows up:** `backend/app/services/chain_anchor.py` (`anchor_segment`, `get_segment`), `backend/scripts/anchor_segment.py`, ingest via `ingest_segment_processor.py`, ABI in `backend/app/contracts/datachain_abi.py`. The **user** Verify button uses **ethers.js** in the browser, not this Python helper.
+
+### ethers.js (browser verification)
+
+**What it is:** **ethers.js** is a JavaScript library the web app uses to talk to an Ethereum-compatible chain from the **browser**. Datachain uses it only to **read** `getSegment` on Polygon **Amoy** (no wallet signature, no private key in the frontend).
+
+**Why Datachain uses it:** Integrity is something a user can check themselves: the page loads each minute’s CID and hash from the API, then asks the smart contract for the same fields and compares them. A green **Verified** badge means they match; a red **Tampered** badge means they do not. If the RPC node cannot be reached, the result is **Failed to verify**, not tampered.
+
+**Where it shows up:** `frontend/lib/verify-chain.ts`, `frontend/lib/datachain-abi.ts`, camera recordings Verify UI (`frontend/components/camera-recordings.tsx`). RPC is proxied at `/amoy-rpc` (see `frontend/next.config.ts` and `frontend/.env.example`).
 
 ### Development mocks for IPFS and blockchain (later slices)
 
@@ -276,4 +284,4 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 ### Technologies on the roadmap but not fully in the repo yet
 
-The product vision still needs **ethers.js** browser verification (Epic 8 / Slice E). Ingest can use a maintainer-deployed Amoy contract address.
+The product vision still needs remaining Slice E work (partial-range verify, download, verification audit log). Ingest can use a maintainer-deployed Amoy contract address.

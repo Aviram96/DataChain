@@ -56,3 +56,31 @@ export async function listRecordings(
 
   return (await response.json()) as VideoRecordListResponse;
 }
+
+const VERIFY_PAGE_SIZE = 50;
+
+export async function listAllRecordings(
+  cameraId: string,
+  params: Pick<ListRecordingsParams, "startedAt" | "endedAt"> = {}
+): Promise<VideoRecordPublic[]> {
+  const items: VideoRecordPublic[] = [];
+  let page = 1;
+  let pages = 1;
+
+  while (page <= pages) {
+    const data = await listRecordings(cameraId, {
+      page,
+      pageSize: VERIFY_PAGE_SIZE,
+      startedAt: params.startedAt,
+      endedAt: params.endedAt,
+    });
+    items.push(...data.items);
+    pages = data.pages;
+    if (items.length >= data.total || data.items.length === 0) {
+      break;
+    }
+    page += 1;
+  }
+
+  return items;
+}

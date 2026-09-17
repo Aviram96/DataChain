@@ -33,4 +33,12 @@ export const ui = {
     "inline-flex items-center gap-1.5 rounded-md bg-landing-accent/10 px-2 py-0.5 text-xs font-medium text-landing-accent ring-1 ring-landing-accent/25",
   badgeOffline:
     "inline-flex items-center gap-1.5 rounded-md bg-landing-ink/5 px-2 py-0.5 text-xs font-medium text-landing-ink/55 ring-1 ring-landing-ink/10",
+  badgeVerified:
+    "inline-flex items-center gap-1.5 rounded-md bg-landing-accent/10 px-2 py-0.5 text-xs font-medium text-landing-accent ring-1 ring-landing-accent/25",
+  badgeTampered:
+    "inline-flex items-center gap-1.5 rounded-md bg-landing-warn/10 px-2 py-0.5 text-xs font-medium text-landing-warn ring-1 ring-landing-warn/30",
+  badgeMissing:
+    "inline-flex items-center gap-1.5 rounded-md bg-landing-ink/5 px-2 py-0.5 text-xs font-medium text-landing-ink/60 ring-1 ring-landing-ink/15",
+  badgeFailedVerify:
+    "inline-flex items-center gap-1.5 rounded-md bg-landing-ink/10 px-2 py-0.5 text-xs font-medium text-landing-ink/70 ring-1 ring-landing-ink/20",
 } as const;
