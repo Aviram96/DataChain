@@ -242,12 +242,12 @@ Epics **1–10** above remain historical delivery notes for the original roadmap
 | B | Camera dashboard management | Done — all CP-B stories Implemented (search/filter/sort, soft delete, unique names, detail page) |
 | C | Video processing pipeline | Done — CP-C.P1–P8 and CP-C.C1 Implemented |
 | D | IPFS storage and blockchain anchoring | In progress — CP-D.P1–P9 Implemented; CP-D.C1 TBD (Slice E verification UI) |
-| E | Video management and verification | Not started — all stories TBD |
+| E | Video management and verification | In progress — E1 search/list (CP-E.C1 / C3 / C4, P1 / P2); CP-E.C2 Partial |
 
 
 **Exit criteria**: Every story in `docs/CLIENT_PROGRAMMER_USER_STORIES.md` is Implemented, Deferred (with reason), or explicitly Declined; open decisions in that file are resolved.
 
-**Progress note**: Slice A complete 2026-07-21 (including landing refinement: toolbar-free home, problem/solution, signed-in → `/cameras`). Slice B complete 2026-07-21 — apply Alembic revision `20260721_000002` for `deleted_at` + unique active name. Slice C complete 2026-09-09 — **CP-C.P1–P8** (simulate feed, receive stream, 1-minute chunks, camera+time filenames, pre-stage integrity check, stage under `temp/` until processing succeeds, delete temp files only after processing success, capped FFmpeg restart + ingest offline) and **CP-C.C1** (`offline_reason` `ingest_failed` vs `unreachable`; `ingest_offline_at` on the API so the card/detail can say **since** capture stopped); apply Alembic `20260824_000003` for `ingest_offline_at`; see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`. Slice D started 2026-09-14; ingest Pinata + chain + DB wired 2026-09-15 (`ingest_segment_processor.py`). **CP-D.P1–P9** Implemented as of 2026-09-17; **CP-D.C1** TBD (experienced in Slice E).
+**Progress note**: Slice A complete 2026-07-21 (including landing refinement: toolbar-free home, problem/solution, signed-in → `/cameras`). Slice B complete 2026-07-21 — apply Alembic revision `20260721_000002` for `deleted_at` + unique active name. Slice C complete 2026-09-09 — **CP-C.P1–P8** (simulate feed, receive stream, 1-minute chunks, camera+time filenames, pre-stage integrity check, stage under `temp/` until processing succeeds, delete temp files only after processing success, capped FFmpeg restart + ingest offline) and **CP-C.C1** (`offline_reason` `ingest_failed` vs `unreachable`; `ingest_offline_at` on the API so the card/detail can say **since** capture stopped); apply Alembic `20260824_000003` for `ingest_offline_at`; see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`. Slice D started 2026-09-14; ingest Pinata + chain + DB wired 2026-09-15 (`ingest_segment_processor.py`). **CP-D.P1–P9** Implemented as of 2026-09-17; **CP-D.C1** TBD (experienced in Slice E). Slice E started 2026-09-17: camera recordings search (`GET /cameras/{id}/recordings`).
 
 ---
 

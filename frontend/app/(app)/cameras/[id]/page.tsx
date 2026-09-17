@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { CameraRecordings } from "@/components/camera-recordings";
 import { RequireAuth } from "@/components/require-auth";
 import { useToast } from "@/components/toast-provider";
 import { networkErrorMessage } from "@/lib/api";
@@ -166,13 +167,7 @@ function CameraDetailContent() {
         </div>
       </dl>
 
-      <section className={ui.panelMuted}>
-        <h2 className={`${ui.sectionTitle} text-left`}>Recordings</h2>
-        <p className={`mt-2 text-left ${ui.muted}`}>
-          Search, watch, download, and verify videos for this camera will appear
-          here (Slice E — Video management).
-        </p>
-      </section>
+      <CameraRecordings cameraId={camera.id} />
     </div>
   );
 }

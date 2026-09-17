@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_jwt_secret
-from app.routers import auth, cameras
+from app.routers import auth, cameras, recordings
 
 
 def _cors_origins() -> list[str]:
@@ -39,6 +39,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(cameras.router, prefix="/cameras", tags=["cameras"])
+app.include_router(recordings.router, prefix="/cameras", tags=["recordings"])
 
 
 @app.get("/health")

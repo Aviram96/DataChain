@@ -23,6 +23,8 @@ export const ui = {
     "inline-flex min-h-10 items-center justify-center rounded-md bg-landing-accent px-4 py-2 text-sm font-semibold text-white transition hover:bg-landing-accent-soft disabled:cursor-not-allowed disabled:opacity-60",
   btnSecondary:
     "inline-flex min-h-10 items-center justify-center rounded-md border border-landing-ink/20 bg-white/80 px-4 py-2 text-sm font-semibold text-landing-ink transition hover:border-landing-ink/35 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60",
+  btnCompact:
+    "inline-flex min-h-9 items-center justify-center rounded-md border border-landing-ink/20 bg-white/80 px-3 py-1.5 text-xs font-semibold text-landing-ink transition hover:border-landing-ink/35 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60",
   btnDanger:
     "inline-flex min-h-10 items-center justify-center rounded-md bg-landing-warn px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#a84c1f] disabled:cursor-not-allowed disabled:opacity-60",
   btnGhostDanger:

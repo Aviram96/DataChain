@@ -203,10 +203,10 @@ _(Users consume results via playback and verification in Slice E; anchoring itse
 
 | ID | Story | Status |
 | -- | ----- | ------ |
-| CP-E.C1 | As a user, I want a dedicated camera page with details and video-related actions. | TBD |
-| CP-E.C2 | As a user, I want a video management area for that camera to search, watch, download, and verify recordings. | TBD |
-| CP-E.C3 | As a user, I want to select a date and a start/end time for a camera, so I can find the recordings I care about. | TBD |
-| CP-E.C4 | As a user, I want search results presented clearly, so I can choose watch, download, or verify. | TBD |
+| CP-E.C1 | As a user, I want a dedicated camera page with details and video-related actions. | Implemented — `/cameras/[id]` details plus recordings search; Watch/Download/Verify still disabled |
+| CP-E.C2 | As a user, I want a video management area for that camera to search, watch, download, and verify recordings. | Partial — search/list on the camera page; watch/download/verify later (E2–E5) |
+| CP-E.C3 | As a user, I want to select a date and a start/end time for a camera, so I can find the recordings I care about. | Implemented — date + start/end filters call `GET /cameras/{id}/recordings` |
+| CP-E.C4 | As a user, I want search results presented clearly, so I can choose watch, download, or verify. | Implemented — per-minute rows with action buttons (disabled until later slices) |
 | CP-E.C5 | As a user, I want to watch the selected recording (time range / segments). | TBD |
 | CP-E.C6 | As a user, I want to download the selected recording as a usable local file. | TBD |
 | CP-E.C7 | As a user, I want to verify the entire selected recording. | TBD |
@@ -222,8 +222,8 @@ _(Users consume results via playback and verification in Slice E; anchoring itse
 
 | ID | Story | Status |
 | -- | ----- | ------ |
-| CP-E.P1 | As the system, I want camera details and every video operation to validate ownership, so users only access their own cameras and footage. | TBD |
-| CP-E.P2 | As the system, I want to search segments by camera ID, date, start time, and end time. | TBD |
+| CP-E.P1 | As the system, I want camera details and every video operation to validate ownership, so users only access their own cameras and footage. | Implemented — recordings list 404s for other owners (same as camera detail) |
+| CP-E.P2 | As the system, I want to search segments by camera ID, date, start time, and end time. | Implemented — overlap window on `GET /cameras/{id}/recordings` |
 | CP-E.P3 | As the system, I want to calculate which one-minute segments are **expected** for a selected range, so gaps can be detected. | TBD |
 | CP-E.P4 | As the system, I want to check whether each expected segment is available in storage, distinguishing missing metadata from an unretrievable file. | TBD |
 | CP-E.P5 | As the system, I want to compare each segment against stored hash, CID, and blockchain proof (cross-source consistency). | TBD |
@@ -288,3 +288,4 @@ Add here only if the teacher requires them in the client–programmer pack.
 | 2026-09-15 | Ingest wires Pinata + chain + DB (`ingest_segment_processor`); CP-D.P1 / P6 / P7 Implemented; CP-D.P2 still Partial (live Amoy). |
 | 2026-09-17 | CP-D.P5 Implemented — Web3.py `get_segment` / `getSegment` (mocked tests; no DB). CP-D.P2 Implemented (live Amoy proven by maintainer). |
 | 2026-09-17 | CP-D.P9 Implemented — mocked integration test CID → tx → `video_records` (`test_ingest_ipfs_chain_db.py`). |
+| 2026-09-17 | Slice E started: CP-E.C1 / C3 / C4 and CP-E.P1 / P2 Implemented; CP-E.C2 Partial (search/list; watch/download/verify later). |

@@ -145,6 +145,19 @@ Probe details (not stored in the database):
 | `status` | `online` or `offline` (live probe **or** ingest restart-cap flag) |
 | `sort` | Default `created_at_desc` (newest first). Also `created_at_asc`, `name_asc`, `name_desc` |
 
+### Camera recordings (Slice E / CP-E.P1–P2)
+
+`GET /cameras/{id}/recordings` lists **one-minute** `video_records` for an **owned, active** camera (same 404 as camera detail if the camera is missing or not yours). Newest start time first. Pagination matches the camera list (`page`, `page_size`, default 10, max 50).
+
+Optional overlap window (ISO-8601):
+
+| Param | Meaning |
+| ----- | ------- |
+| `started_at` | Include segments that end after this instant |
+| `ended_at` | Include segments that start before this instant |
+
+Both set: end must be after start (HTTP **400** otherwise). The camera detail page sends a local date plus start/end times as UTC ISO values. Watch / download / verify are not wired yet.
+
 ### Soft delete and unique names
 
 - `DELETE /cameras/{id}` sets **`deleted_at`** (soft delete). The camera disappears from the dashboard; the row remains so historical `video_records` are not destroyed (`ON DELETE RESTRICT` on `video_records.camera_id`).
