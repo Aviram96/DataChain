@@ -203,11 +203,11 @@ _(Users consume results via playback and verification in Slice E; anchoring itse
 
 | ID | Story | Status |
 | -- | ----- | ------ |
-| CP-E.C1 | As a user, I want a dedicated camera page with details and video-related actions. | Implemented — `/cameras/[id]` details plus recordings search; Watch/Download/Verify still disabled |
-| CP-E.C2 | As a user, I want a video management area for that camera to search, watch, download, and verify recordings. | Partial — search/list on the camera page; watch/download/verify later (E2–E5) |
+| CP-E.C1 | As a user, I want a dedicated camera page with details and video-related actions. | Implemented — `/cameras/[id]` details plus recordings search; Watch streams from IPFS; Download/Verify still disabled |
+| CP-E.C2 | As a user, I want a video management area for that camera to search, watch, download, and verify recordings. | Partial — search/list/watch on the camera page; download/verify later (E3–E5) |
 | CP-E.C3 | As a user, I want to select a date and a start/end time for a camera, so I can find the recordings I care about. | Implemented — date + start/end filters call `GET /cameras/{id}/recordings` |
-| CP-E.C4 | As a user, I want search results presented clearly, so I can choose watch, download, or verify. | Implemented — per-minute rows with action buttons (disabled until later slices) |
-| CP-E.C5 | As a user, I want to watch the selected recording (time range / segments). | TBD |
+| CP-E.C4 | As a user, I want search results presented clearly, so I can choose watch, download, or verify. | Implemented — per-minute rows; Watch enabled; Download/Verify disabled until later slices |
+| CP-E.C5 | As a user, I want to watch the selected recording (time range / segments). | Implemented — Watch on a row plays that minute from `{NEXT_PUBLIC_IPFS_GATEWAY}/ipfs/{cid}`; a search range is still one player per minute |
 | CP-E.C6 | As a user, I want to download the selected recording as a usable local file. | TBD |
 | CP-E.C7 | As a user, I want to verify the entire selected recording. | TBD |
 | CP-E.C8 | As a user, I want to verify only part of a selected recording (sub-range). | TBD |
@@ -289,3 +289,4 @@ Add here only if the teacher requires them in the client–programmer pack.
 | 2026-09-17 | CP-D.P5 Implemented — Web3.py `get_segment` / `getSegment` (mocked tests; no DB). CP-D.P2 Implemented (live Amoy proven by maintainer). |
 | 2026-09-17 | CP-D.P9 Implemented — mocked integration test CID → tx → `video_records` (`test_ingest_ipfs_chain_db.py`). |
 | 2026-09-17 | Slice E started: CP-E.C1 / C3 / C4 and CP-E.P1 / P2 Implemented; CP-E.C2 Partial (search/list; watch/download/verify later). |
+| 2026-09-17 | Slice E2: CP-E.C5 Implemented (Watch from IPFS gateway); CP-E.C2 Partial (watch yes; download/verify later). |

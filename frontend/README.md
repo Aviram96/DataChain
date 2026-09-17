@@ -30,9 +30,15 @@ Dev server defaults to
 
 ## Environment variables
 
-Copy `frontend/.env.example` to `frontend/.env.local` only if you need a custom API URL.
+Copy `frontend/.env.example` to `frontend/.env.local` only if you need a custom API URL or IPFS gateway.
 
 By default, the dev server proxies **`/api/*`** → `http://127.0.0.1:8000/*` (see `next.config.ts`), so login/register avoid browser CORS issues.
+
+**Watch playback (CP-E.C5):** the camera page streams each minute from a public IPFS HTTP gateway:
+
+`{NEXT_PUBLIC_IPFS_GATEWAY}/ipfs/{cid}`
+
+If `NEXT_PUBLIC_IPFS_GATEWAY` is unset, the app uses `https://gateway.pinata.cloud`. Set a dedicated gateway origin (no trailing slash, no `/ipfs` suffix) when you have one. Restart `npm run dev` after changing `NEXT_PUBLIC_*` values.
 
 **Before using `/login` or `/register`, start the backend:**
 
@@ -57,7 +63,7 @@ Quick API check: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health) sh
 - `/register` — Sign up (error toast on duplicate email)
 - Header (app pages) — When signed in: **Signed in as** email + **Log out**; when signed out: Log in / Sign up
 - `/cameras` — Camera dashboard (main app surface after auth)
-- `/cameras/new`, `/cameras/[id]`, `/cameras/[id]/edit` — add, detail (recordings search), edit
+- `/cameras/new`, `/cameras/[id]`, `/cameras/[id]/edit` — add, detail (recordings search + Watch from IPFS gateway), edit
 - Camera **Online/Offline** badge; when ingest hits the FFmpeg restart cap, `offline_reason` is `ingest_failed`, `ingest_offline_at` is set, and the card/detail explain that footage may be missing **since** that time (CP-C.C1)
 - `/project-status` — Internal/dev status page (not linked from landing)
 

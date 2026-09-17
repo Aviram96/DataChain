@@ -1,9 +1,10 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { networkErrorMessage } from "@/lib/api";
 import { CamerasApiError } from "@/lib/cameras-api";
+import { ipfsGatewayUrl } from "@/lib/ipfs-gateway";
 import {
   listRecordings,
   type VideoRecordPublic,
@@ -14,8 +15,7 @@ import { useToast } from "./toast-provider";
 
 const PAGE_SIZE = 10;
 
-const COMING_SOON =
-  "Watch, download, and verify will be available in a later step.";
+const COMING_SOON = "Download and verify will be available in a later step.";
 
 type CameraRecordingsProps = {
   cameraId: string;
@@ -35,6 +35,8 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [watching, setWatching] = useState<VideoRecordPublic | null>(null);
+  const playbackErrorFor = useRef<string | null>(null);
 
   const load = useCallback(
     async (pageToLoad: number) => {
@@ -86,6 +88,31 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
     setEndInput("");
     setPage(1);
     setApplied({});
+  }
+
+  function openWatch(record: VideoRecordPublic) {
+    const cid = record.ipfs_cid.trim();
+    if (!cid) {
+      showToast("This recording has no IPFS CID, so it cannot be played.", "error");
+      return;
+    }
+    playbackErrorFor.current = null;
+    setWatching(record);
+  }
+
+  function closeWatch() {
+    setWatching(null);
+  }
+
+  function handlePlaybackError() {
+    if (!watching || playbackErrorFor.current === watching.id) {
+      return;
+    }
+    playbackErrorFor.current = watching.id;
+    showToast(
+      "Could not play this recording from IPFS. Check the gateway URL or try again.",
+      "error"
+    );
   }
 
   const hasRange = Boolean(applied.startedAt || applied.endedAt);
@@ -170,8 +197,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    disabled
-                    title={COMING_SOON}
+                    onClick={() => openWatch(record)}
                     className={ui.btnCompact}
                   >
                     Watch
@@ -228,7 +254,78 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
           </div>
         </div>
       ) : null}
+
+      {watching ? (
+        <RecordingPlayer
+          record={watching}
+          src={ipfsGatewayUrl(watching.ipfs_cid)}
+          onClose={closeWatch}
+          onPlaybackError={handlePlaybackError}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function RecordingPlayer({
+  record,
+  src,
+  onClose,
+  onPlaybackError,
+}: {
+  record: VideoRecordPublic;
+  src: string;
+  onClose: () => void;
+  onPlaybackError: () => void;
+}) {
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onClose();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-landing-ink/40 p-4"
+      role="presentation"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="recording-player-title"
+        className={`${ui.panel} w-full max-w-3xl`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 id="recording-player-title" className={ui.sectionTitle}>
+              Watch recording
+            </h3>
+            <p className={`mt-1 ${ui.muted}`}>
+              {formatWindow(record.started_at, record.ended_at)}
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className={ui.btnSecondary}>
+            Close
+          </button>
+        </div>
+        <video
+          key={record.id}
+          controls
+          autoPlay
+          playsInline
+          className="w-full rounded-md bg-landing-ink"
+          onError={onPlaybackError}
+        >
+          <source src={src} type="video/mp4" />
+        </video>
+      </div>
+    </div>
   );
 }
 
