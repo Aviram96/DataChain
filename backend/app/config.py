@@ -112,3 +112,16 @@ def get_anchor_retry_delay_seconds() -> float:
         return max(0.0, min(30.0, float(raw)))
     except ValueError:
         return 2.0
+
+
+def get_ipfs_gateway_base() -> str:
+    raw = os.getenv("IPFS_GATEWAY", "").strip() or "https://gateway.pinata.cloud"
+    return raw.rstrip("/").removesuffix("/ipfs")
+
+
+def get_ipfs_gateway_timeout_seconds() -> float:
+    raw = os.getenv("IPFS_GATEWAY_TIMEOUT_SECONDS", "60")
+    try:
+        return max(5.0, min(300.0, float(raw)))
+    except ValueError:
+        return 60.0

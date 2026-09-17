@@ -84,3 +84,59 @@ export async function listAllRecordings(
 
   return items;
 }
+
+export async function downloadRecordings(
+  cameraId: string,
+  params: { startedAt: string; endedAt: string }
+): Promise<void> {
+  const search = new URLSearchParams({
+    started_at: params.startedAt,
+    ended_at: params.endedAt,
+  });
+  const response = await authFetch(
+    `${getApiBaseUrl()}/cameras/${cameraId}/recordings/download?${search.toString()}`
+  );
+
+  if (!response.ok) {
+    const message = await parseApiErrorMessage(
+      response,
+      "Could not download recordings."
+    );
+    throw new CamerasApiError(message, response.status);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filenameFromDisposition(
+    response.headers.get("Content-Disposition")
+  );
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function filenameFromDisposition(header: string | null): string {
+  if (!header) {
+    return "recording.mp4";
+  }
+  const utf = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf?.[1]) {
+    try {
+      return decodeURIComponent(utf[1].trim());
+    } catch {
+      return utf[1].trim();
+    }
+  }
+  const quoted = /filename="([^"]+)"/i.exec(header);
+  if (quoted?.[1]) {
+    return quoted[1];
+  }
+  const plain = /filename=([^;]+)/i.exec(header);
+  if (plain?.[1]) {
+    return plain[1].trim();
+  }
+  return "recording.mp4";
+}

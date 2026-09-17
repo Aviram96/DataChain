@@ -224,7 +224,7 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** CCTV ingest needs **fixed-duration chunks** (about one minute) for IPFS uploads and chain anchors. FFmpeg is the standard way to turn a continuous feed (real RTSP or a **looped sample MP4**) into those segments without storing one giant file in the API process.
 
-**Where it shows up:** Epic 5 starts with `backend/scripts/simulate_cctv_feed.py` and `backend/app/services/cctv_feed_simulator.py` (loop a local `.mp4` at real-time pace to stdout). **Slice C / CP-C.P2–P8** receive each registered camera URL via `backend/scripts/ingest_camera.py` and write **1-minute** `.mp4` files under `backend/temp/<camera-id>/` using `backend/app/services/video_chunker.py`. Closed segments are checked with **ffprobe** (a companion tool in the FFmpeg install) plus a SHA-256 fingerprint in `backend/app/services/segment_integrity.py` before later stages, and stay staged in `temp/` until processing succeeds (`backend/app/services/segment_staging.py`). If FFmpeg stops unexpectedly, `backend/app/services/ffmpeg_supervisor.py` restarts it (capped for camera ingest) and ingest can mark the camera offline. **`backend/scripts/chunk_cctv_feed.py`** can still chunk a local file the same way. Install FFmpeg on the host; see `backend/README.md`.
+**Where it shows up:** Epic 5 starts with `backend/scripts/simulate_cctv_feed.py` and `backend/app/services/cctv_feed_simulator.py` (loop a local `.mp4` at real-time pace to stdout). **Slice C / CP-C.P2–P8** receive each registered camera URL via `backend/scripts/ingest_camera.py` and write **1-minute** `.mp4` files under `backend/temp/<camera-id>/` using `backend/app/services/video_chunker.py`. Closed segments are checked with **ffprobe** (a companion tool in the FFmpeg install) plus a SHA-256 fingerprint in `backend/app/services/segment_integrity.py` before later stages, and stay staged in `temp/` until processing succeeds (`backend/app/services/segment_staging.py`). If FFmpeg stops unexpectedly, `backend/app/services/ffmpeg_supervisor.py` restarts it (capped for camera ingest) and ingest can mark the camera offline. **`backend/scripts/chunk_cctv_feed.py`** can still chunk a local file the same way. **Slice E / CP-E.P10** uses FFmpeg again to **join** downloaded minutes into one file (`backend/app/services/recording_download.py`). Install FFmpeg on the host; see `backend/README.md`.
 
 ### SHA-256 (segment fingerprint)
 
@@ -256,7 +256,7 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** One-minute CCTV clips stay **off-chain**. The CID uniquely identifies the bytes; later the same CID is stored in PostgreSQL and on Polygon so verification can detect a swapped file.
 
-**Where it shows up:** `backend/app/services/pinata_ipfs.py`, `backend/scripts/upload_segment_ipfs.py`, ingest via `ingest_segment_processor.py`, `PINATA_JWT` in `backend/.env.example`. Playback uses a public **IPFS HTTP gateway** (`NEXT_PUBLIC_IPFS_GATEWAY`, default Pinata gateway) on the camera recordings page (`frontend/lib/ipfs-gateway.ts`).
+**Where it shows up:** `backend/app/services/pinata_ipfs.py`, `backend/scripts/upload_segment_ipfs.py`, ingest via `ingest_segment_processor.py`, `PINATA_JWT` in `backend/.env.example`. Playback uses a public **IPFS HTTP gateway** (`NEXT_PUBLIC_IPFS_GATEWAY`, default Pinata gateway) on the camera recordings page (`frontend/lib/ipfs-gateway.ts`). Range download fetches the same gateway from the API (`IPFS_GATEWAY` in `backend/.env.example`).
 
 ### Web3.py (Polygon anchoring)
 
@@ -284,4 +284,4 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 ### Technologies on the roadmap but not fully in the repo yet
 
-The product vision still needs remaining Slice E work (download as one file, verification audit log). Ingest can use a maintainer-deployed Amoy contract address.
+The product vision still needs remaining Slice E work (verification audit log). Ingest can use a maintainer-deployed Amoy contract address.

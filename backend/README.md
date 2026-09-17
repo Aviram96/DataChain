@@ -156,7 +156,9 @@ Optional overlap window (ISO-8601):
 | `started_at` | Include segments that end after this instant |
 | `ended_at` | Include segments that start before this instant |
 
-Both set: end must be after start (HTTP **400** otherwise). The camera detail page sends a local date plus start/end times as UTC ISO values. Watch / download / verify are not wired yet.
+Both set: end must be after start (HTTP **400** otherwise). The camera detail page sends a local date plus start/end times as UTC ISO values.
+
+`GET /cameras/{id}/recordings/download` (CP-E.P10) requires **`started_at` and `ended_at`**. It fetches overlapping minutes from the IPFS HTTP gateway (oldest first), concatenates them with **FFmpeg** (`-c copy`) into one `.mp4`, and returns that file. Owner 404 matches the list. Empty range: **404**. More than 24 hours of minutes: **400**. Gateway or concat failure: **502** (FFmpeg missing: **503**). Optional `IPFS_GATEWAY` (default `https://gateway.pinata.cloud`). FFmpeg must be on PATH.
 
 ### Soft delete and unique names
 

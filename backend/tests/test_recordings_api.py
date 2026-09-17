@@ -229,3 +229,84 @@ def test_list_recordings_unknown_camera(client: TestClient) -> None:
         headers=_auth_headers(token),
     )
     assert response.status_code == 404
+
+
+def test_download_recordings_requires_auth(client: TestClient) -> None:
+    response = client.get(
+        f"/cameras/{uuid4()}/recordings/download",
+        params={
+            "started_at": "2026-08-24T12:00:00Z",
+            "ended_at": "2026-08-24T12:05:00Z",
+        },
+    )
+    assert response.status_code == 401
+
+
+def test_download_recordings_hidden_from_other_owner(
+    client: TestClient, db_session: Session
+) -> None:
+    token_a = _register_and_token(client, "dl-owner-a@example.com")
+    token_b = _register_and_token(client, "dl-owner-b@example.com")
+    camera_id = _create_camera(client, token_a)
+    _add_segment(db_session, camera_id, NOON)
+
+    forbidden = client.get(
+        f"/cameras/{camera_id}/recordings/download",
+        headers=_auth_headers(token_b),
+        params={
+            "started_at": "2026-08-24T12:00:00Z",
+            "ended_at": "2026-08-24T12:05:00Z",
+        },
+    )
+    assert forbidden.status_code == 404
+
+
+def test_download_recordings_empty_range(client: TestClient) -> None:
+    token = _register_and_token(client, "dl-empty@example.com")
+    camera_id = _create_camera(client, token)
+    response = client.get(
+        f"/cameras/{camera_id}/recordings/download",
+        headers=_auth_headers(token),
+        params={
+            "started_at": "2026-08-24T12:00:00Z",
+            "ended_at": "2026-08-24T12:05:00Z",
+        },
+    )
+    assert response.status_code == 404
+
+
+def test_download_recordings_combines_range(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pathlib import Path
+
+    from app.services import recording_download as download_mod
+
+    def fake_assemble(cids: list[str], work_dir: Path, **_kwargs: object) -> Path:
+        assert cids == [CID]
+        output = work_dir / "combined.mp4"
+        output.write_bytes(b"joined-mp4")
+        return output
+
+    monkeypatch.setattr(download_mod, "assemble_range_download", fake_assemble)
+    monkeypatch.setattr(
+        "app.routers.recordings.assemble_range_download", fake_assemble
+    )
+
+    token = _register_and_token(client, "dl-ok@example.com")
+    camera_id = _create_camera(client, token)
+    _add_segment(db_session, camera_id, NOON)
+
+    response = client.get(
+        f"/cameras/{camera_id}/recordings/download",
+        headers=_auth_headers(token),
+        params={
+            "started_at": "2026-08-24T12:00:00Z",
+            "ended_at": "2026-08-24T12:05:00Z",
+        },
+    )
+    assert response.status_code == 200
+    assert response.content == b"joined-mp4"
+    assert "video/mp4" in response.headers.get("content-type", "")
+    disposition = response.headers.get("content-disposition", "")
+    assert "recordings_20260824T120000Z_20260824T120500Z.mp4" in disposition

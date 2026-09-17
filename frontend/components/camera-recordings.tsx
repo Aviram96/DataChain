@@ -6,6 +6,7 @@ import { networkErrorMessage } from "@/lib/api";
 import { CamerasApiError } from "@/lib/cameras-api";
 import { ipfsGatewayUrl } from "@/lib/ipfs-gateway";
 import {
+  downloadRecordings,
   listAllRecordings,
   listRecordings,
   type VideoRecordPublic,
@@ -28,8 +29,6 @@ import { useToast } from "./toast-provider";
 
 const PAGE_SIZE = 10;
 
-const COMING_SOON = "Download will be available in a later step.";
-
 type CameraRecordingsProps = {
   cameraId: string;
 };
@@ -50,6 +49,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   const [loading, setLoading] = useState(true);
   const [watching, setWatching] = useState<VideoRecordPublic | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [verifyReport, setVerifyReport] = useState<VerifyReport | null>(null);
   const [partialStart, setPartialStart] = useState("");
   const [partialEnd, setPartialEnd] = useState("");
@@ -228,27 +228,27 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
     }, undefined, "full");
   }
 
-  function verifyPartialRange() {
+  function resolvePartialWindow(): { startedAt: string; endedAt: string } | null {
     if (!applied.startedAt || !applied.endedAt) {
       showToast(
-        "Choose a date and time range, then verify part of that recording.",
+        "Choose a date and time range, then pick a part of that recording.",
         "error"
       );
-      return;
+      return null;
     }
     if (!partialStart.trim() || !partialEnd.trim()) {
       showToast(
         "Choose a start and end time inside the searched range.",
         "error"
       );
-      return;
+      return null;
     }
     const date = isoToLocalDate(applied.startedAt);
     const startedAt = localDateTimeToIso(date, partialStart);
     const endedAt = localDateTimeToIso(date, partialEnd);
     if (!startedAt || !endedAt || Date.parse(endedAt) <= Date.parse(startedAt)) {
       showToast("Choose an end time after the start time.", "error");
-      return;
+      return null;
     }
     const clipped = clipSubRange(
       { startedAt: applied.startedAt, endedAt: applied.endedAt },
@@ -256,16 +256,24 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
     );
     if (clipped === "invalid") {
       showToast("Choose an end time after the start time.", "error");
-      return;
+      return null;
     }
     if (clipped === "outside") {
       showToast(
         "Choose a start and end inside the searched date and time range.",
         "error"
       );
+      return null;
+    }
+    return clipped;
+  }
+
+  function verifyPartialRange() {
+    const window = resolvePartialWindow();
+    if (!window) {
       return;
     }
-    void runVerify(clipped, undefined, "partial");
+    void runVerify(window, undefined, "partial");
   }
 
   function verifyOne(record: VideoRecordPublic) {
@@ -276,6 +284,51 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
     );
   }
 
+  async function runDownload(range: { startedAt: string; endedAt: string }) {
+    setDownloading(true);
+    try {
+      await downloadRecordings(cameraId, range);
+    } catch (error) {
+      if (error instanceof CamerasApiError) {
+        showToast(error.message, "error");
+      } else {
+        showToast(networkErrorMessage(), "error");
+      }
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  function downloadAppliedRange() {
+    if (!applied.startedAt || !applied.endedAt) {
+      showToast(
+        "Choose a date and time range, then download that recording.",
+        "error"
+      );
+      return;
+    }
+    void runDownload({
+      startedAt: applied.startedAt,
+      endedAt: applied.endedAt,
+    });
+  }
+
+  function downloadPartialRange() {
+    const window = resolvePartialWindow();
+    if (!window) {
+      return;
+    }
+    void runDownload(window);
+  }
+
+  function downloadOne(record: VideoRecordPublic) {
+    void runDownload({
+      startedAt: record.started_at,
+      endedAt: record.ended_at,
+    });
+  }
+
+  const busy = verifying || downloading;
   const hasRange = Boolean(applied.startedAt || applied.endedAt);
   const emptyMessage = hasRange
     ? "No recordings match that date and time range."
@@ -336,11 +389,19 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
           </button>
           <button
             type="button"
-            disabled={verifying}
+            disabled={busy}
             onClick={verifyAppliedRange}
             className={ui.btnSecondary}
           >
             {verifying ? "Verifying…" : "Verify"}
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={downloadAppliedRange}
+            className={ui.btnSecondary}
+          >
+            {downloading ? "Downloading…" : "Download"}
           </button>
           <button type="button" onClick={clearSearch} className={ui.btnSecondary}>
             Clear
@@ -353,8 +414,8 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
           className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end ${ui.panel}`}
         >
           <p className={`sm:col-span-2 lg:col-span-4 text-left ${ui.muted}`}>
-            Verify part of this range. Minutes outside the times below are not
-            checked.
+            Use part of this range. Minutes outside the times below are not
+            verified or downloaded.
           </p>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="verify-part-start" className={ui.hint}>
@@ -383,11 +444,19 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={verifying}
+              disabled={busy}
               onClick={verifyPartialRange}
               className={ui.btnSecondary}
             >
               {verifying ? "Verifying…" : "Verify part"}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={downloadPartialRange}
+              className={ui.btnSecondary}
+            >
+              {downloading ? "Downloading…" : "Download part"}
             </button>
           </div>
         </div>
@@ -425,15 +494,15 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
                   </button>
                   <button
                     type="button"
-                    disabled
-                    title={COMING_SOON}
+                    disabled={busy}
+                    onClick={() => downloadOne(record)}
                     className={ui.btnCompact}
                   >
                     Download
                   </button>
                   <button
                     type="button"
-                    disabled={verifying}
+                    disabled={busy}
                     onClick={() => verifyOne(record)}
                     className={ui.btnCompact}
                   >
