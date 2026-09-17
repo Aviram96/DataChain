@@ -270,6 +270,14 @@ python scripts/anchor_segment.py --camera-id UUID --started-at 1700000000 --ende
 
 Implementation: `app/services/chain_anchor.py`. Tests in `tests/test_chain_anchor.py` mock the send path.
 
+## Polygon Amoy read (Slice D / CP-D.P5)
+
+Read one `getSegment` record with **Web3.py** (camera id, start/end, CID, segment hash). This is a **view call**: no signing key and **no PostgreSQL**, so metadata is still readable if the database is down.
+
+Uses the same `DATACHAIN_CONTRACT_ADDRESS` and `POLYGON_RPC_URL` as anchoring. Missing anchors raise; the helper does not invent a row.
+
+Implementation: `get_segment` in `app/services/chain_anchor.py`. Tests in `tests/test_chain_anchor.py` mock the call path.
+
 ## Tests
 
 From `backend/` with dev dependencies installed:

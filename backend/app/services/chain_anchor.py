@@ -1,7 +1,9 @@
-"""Submit Datachain anchor transactions with Web3.py (Slice D / CP-D.P3).
+"""Datachain contract helpers with Web3.py (Slice D).
 
-Retries RPC timeouts and gas failures. Failures raise so the caller can keep
-the temp segment. Ingest does not call this yet.
+``anchor_segment`` submits ``anchorSegment`` and retries RPC timeouts and gas
+failures. Failures raise so ingest can keep the temp file.
+
+``get_segment`` is a view call (``getSegment``): no private key, no PostgreSQL.
 """
 
 from __future__ import annotations
@@ -36,15 +38,27 @@ from app.contracts.datachain_abi import DATACHAIN_ABI
 logger = logging.getLogger(__name__)
 
 SendOnce = Callable[["SegmentAnchorRequest"], str]
+CallOnce = Callable[[UUID, datetime], "SegmentAnchor"]
 
 
 class ChainAnchorError(Exception):
-    """Anchor transaction failed after retries or was not retryable."""
+    """Anchor write or on-chain read failed."""
 
 
 @dataclass(frozen=True)
 class SegmentAnchorRequest:
     """On-chain fields for one one-minute segment."""
+
+    camera_id: UUID
+    started_at: datetime
+    ended_at: datetime
+    cid: str
+    segment_hash: str
+
+
+@dataclass(frozen=True)
+class SegmentAnchor:
+    """Decoded ``getSegment`` result (no database)."""
 
     camera_id: UUID
     started_at: datetime
@@ -71,6 +85,57 @@ def sha256_hex_to_bytes32(segment_hash: str) -> bytes:
     if raw == bytes(32):
         raise ChainAnchorError("segment hash must not be zero")
     return raw
+
+
+def bytes16_to_camera_id(raw: object) -> UUID:
+    data = _as_bytes(raw, expected_len=16, label="camera id")
+    return UUID(bytes=data)
+
+
+def bytes32_to_sha256_hex(raw: object) -> str:
+    return _as_bytes(raw, expected_len=32, label="segment hash").hex()
+
+
+def _as_bytes(raw: object, *, expected_len: int, label: str) -> bytes:
+    if isinstance(raw, (bytes, bytearray, memoryview)):
+        data = bytes(raw)
+    else:
+        raise ChainAnchorError(f"{label} must be bytes")
+    if len(data) != expected_len:
+        raise ChainAnchorError(f"{label} must be {expected_len} bytes")
+    return data
+
+
+def decode_segment_anchor(raw: object) -> SegmentAnchor:
+    """Turn a Web3.py ``getSegment`` tuple/mapping into ``SegmentAnchor``."""
+    camera_raw = _anchor_field(raw, 0, "cameraId", "camera_id")
+    started_raw = _anchor_field(raw, 1, "startedAt", "started_at")
+    ended_raw = _anchor_field(raw, 2, "endedAt", "ended_at")
+    cid_raw = _anchor_field(raw, 3, "cid")
+    hash_raw = _anchor_field(raw, 4, "segmentHash", "segment_hash")
+    cid = str(cid_raw).strip()
+    if not cid:
+        raise ChainAnchorError("AnchorNotFound")
+    return SegmentAnchor(
+        camera_id=bytes16_to_camera_id(camera_raw),
+        started_at=datetime.fromtimestamp(int(started_raw), tz=timezone.utc),
+        ended_at=datetime.fromtimestamp(int(ended_raw), tz=timezone.utc),
+        cid=cid,
+        segment_hash=bytes32_to_sha256_hex(hash_raw),
+    )
+
+
+def _anchor_field(raw: object, index: int, *names: str) -> object:
+    if isinstance(raw, dict):
+        for name in names:
+            if name in raw:
+                return raw[name]
+    if isinstance(raw, (list, tuple)) and len(raw) > index:
+        return raw[index]
+    for name in names:
+        if hasattr(raw, name):
+            return getattr(raw, name)
+    raise ChainAnchorError("malformed getSegment result")
 
 
 def unix_uint64(moment: datetime) -> int:
@@ -166,14 +231,40 @@ def anchor_segment(
     raise ChainAnchorError(f"Anchor failed: {last_error}")
 
 
-def _send_anchor_once(request: SegmentAnchorRequest) -> str:
-    if not request.cid.strip():
-        raise ChainAnchorError("CID is empty")
-    started = unix_uint64(request.started_at)
-    ended = unix_uint64(request.ended_at)
-    if ended <= started:
-        raise ChainAnchorError("end time must be after start time")
+def get_segment(
+    camera_id: UUID,
+    started_at: datetime,
+    *,
+    call_once: CallOnce | None = None,
+) -> SegmentAnchor:
+    """Read ``getSegment`` for one camera and start time.
 
+    Does not use PostgreSQL or a signing key. Missing anchors and RPC failures
+    raise ``ChainAnchorError``.
+    """
+    call = call_once if call_once is not None else _call_get_segment_once
+    try:
+        anchored = call(camera_id, started_at)
+    except ChainAnchorError:
+        raise
+    except Exception as exc:
+        logger.error(
+            "On-chain segment read failed for camera %s start %s: %s",
+            camera_id,
+            started_at.isoformat(),
+            exc,
+        )
+        raise ChainAnchorError(f"On-chain segment read failed: {exc}") from exc
+    logger.info(
+        "Read on-chain segment camera %s start %s cid=%s",
+        camera_id,
+        started_at.isoformat(),
+        anchored.cid,
+    )
+    return anchored
+
+
+def _connected_web3() -> tuple[Web3, float]:
     timeout = get_anchor_rpc_timeout_seconds()
     w3 = Web3(
         Web3.HTTPProvider(
@@ -184,12 +275,37 @@ def _send_anchor_once(request: SegmentAnchorRequest) -> str:
     w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
     if not w3.is_connected():
         raise TimeoutError("Polygon RPC is not reachable")
+    return w3, timeout
 
-    account = Account.from_key(get_anchor_private_key())
-    contract = w3.eth.contract(
+
+def _datachain_contract(w3: Web3):
+    return w3.eth.contract(
         address=Web3.to_checksum_address(get_datachain_contract_address()),
         abi=DATACHAIN_ABI,
     )
+
+
+def _call_get_segment_once(camera_id: UUID, started_at: datetime) -> SegmentAnchor:
+    w3, _timeout = _connected_web3()
+    contract = _datachain_contract(w3)
+    raw = contract.functions.getSegment(
+        camera_id_to_bytes16(camera_id),
+        unix_uint64(started_at),
+    ).call()
+    return decode_segment_anchor(raw)
+
+
+def _send_anchor_once(request: SegmentAnchorRequest) -> str:
+    if not request.cid.strip():
+        raise ChainAnchorError("CID is empty")
+    started = unix_uint64(request.started_at)
+    ended = unix_uint64(request.ended_at)
+    if ended <= started:
+        raise ChainAnchorError("end time must be after start time")
+
+    w3, timeout = _connected_web3()
+    account = Account.from_key(get_anchor_private_key())
+    contract = _datachain_contract(w3)
     nonce = w3.eth.get_transaction_count(account.address)
     tx = contract.functions.anchorSegment(
         camera_id_to_bytes16(request.camera_id),

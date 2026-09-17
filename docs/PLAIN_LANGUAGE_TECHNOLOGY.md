@@ -260,11 +260,11 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 ### Web3.py (Polygon anchoring)
 
-**What it is:** **Web3.py** is a Python library for talking to Ethereum-compatible blockchains (send transactions, read contracts). Datachain uses it to call `anchorSegment` on Polygon **Amoy**.
+**What it is:** **Web3.py** is a Python library for talking to Ethereum-compatible blockchains (send transactions, read contracts). Datachain uses it to call `anchorSegment` and `getSegment` on Polygon **Amoy**.
 
-**Why Datachain uses it:** The backend must record each minute’s CID and hash on-chain. If the RPC times out or gas is too low, the helper **retries** and **does not treat the segment as proven**; the temp file can stay for another attempt.
+**Why Datachain uses it:** The backend must record each minute’s CID and hash on-chain. If the RPC times out or gas is too low, the write helper **retries** and **does not treat the segment as proven**; the temp file can stay for another attempt. A separate **read** helper can load the same metadata from the contract **without PostgreSQL**.
 
-**Where it shows up:** `backend/app/services/chain_anchor.py`, `backend/scripts/anchor_segment.py`, ingest via `ingest_segment_processor.py`, ABI in `backend/app/contracts/datachain_abi.py`.
+**Where it shows up:** `backend/app/services/chain_anchor.py` (`anchor_segment`, `get_segment`), `backend/scripts/anchor_segment.py`, ingest via `ingest_segment_processor.py`, ABI in `backend/app/contracts/datachain_abi.py`.
 
 ### Development mocks for IPFS and blockchain (later slices)
 
@@ -276,4 +276,4 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 ### Technologies on the roadmap but not fully in the repo yet
 
-The product vision still needs **ethers.js** browser verification (Epic 8 / Slice E) and a live Amoy contract address for production ingest.
+The product vision still needs **ethers.js** browser verification (Epic 8 / Slice E). Ingest can use a maintainer-deployed Amoy contract address.

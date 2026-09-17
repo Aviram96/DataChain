@@ -1,4 +1,4 @@
-"""Tests for Web3.py segment anchoring (CP-D.P3). RPC is mocked."""
+"""Tests for Web3.py segment anchor write/read (CP-D.P3, CP-D.P5). RPC is mocked."""
 
 from __future__ import annotations
 
@@ -9,9 +9,12 @@ import pytest
 
 from app.services.chain_anchor import (
     ChainAnchorError,
+    SegmentAnchor,
     SegmentAnchorRequest,
     anchor_segment,
     camera_id_to_bytes16,
+    decode_segment_anchor,
+    get_segment,
     is_retryable_anchor_error,
     sha256_hex_to_bytes32,
     unix_uint64,
@@ -27,6 +30,16 @@ TX = "0x" + "bb" * 32
 
 def _request() -> SegmentAnchorRequest:
     return SegmentAnchorRequest(
+        camera_id=CAMERA_ID,
+        started_at=STARTED,
+        ended_at=ENDED,
+        cid=CID,
+        segment_hash=HASH,
+    )
+
+
+def _on_chain_anchor() -> SegmentAnchor:
+    return SegmentAnchor(
         camera_id=CAMERA_ID,
         started_at=STARTED,
         ended_at=ENDED,
@@ -110,3 +123,63 @@ def test_anchor_does_not_retry_contract_revert() -> None:
             retry_delay_seconds=0,
         )
     assert calls["n"] == 1
+
+
+def test_decode_get_segment_tuple() -> None:
+    anchored = decode_segment_anchor(
+        (
+            camera_id_to_bytes16(CAMERA_ID),
+            1_700_000_000,
+            1_700_000_060,
+            CID,
+            sha256_hex_to_bytes32(HASH),
+        )
+    )
+    assert anchored == _on_chain_anchor()
+
+
+def test_decode_get_segment_mapping() -> None:
+    anchored = decode_segment_anchor(
+        {
+            "cameraId": camera_id_to_bytes16(CAMERA_ID),
+            "startedAt": 1_700_000_000,
+            "endedAt": 1_700_000_060,
+            "cid": CID,
+            "segmentHash": sha256_hex_to_bytes32(HASH),
+        }
+    )
+    assert anchored == _on_chain_anchor()
+
+
+def test_decode_empty_cid_is_not_found() -> None:
+    with pytest.raises(ChainAnchorError, match="AnchorNotFound"):
+        decode_segment_anchor(
+            (
+                camera_id_to_bytes16(CAMERA_ID),
+                1_700_000_000,
+                1_700_000_060,
+                "",
+                sha256_hex_to_bytes32(HASH),
+            )
+        )
+
+
+def test_get_segment_returns_on_chain_fields() -> None:
+    anchored = get_segment(
+        CAMERA_ID,
+        STARTED,
+        call_once=lambda _camera_id, _started_at: _on_chain_anchor(),
+    )
+    assert anchored.camera_id == CAMERA_ID
+    assert anchored.started_at == STARTED
+    assert anchored.ended_at == ENDED
+    assert anchored.cid == CID
+    assert anchored.segment_hash == HASH
+
+
+def test_get_segment_raises_when_anchor_missing() -> None:
+    def missing(_camera_id: UUID, _started_at: datetime) -> SegmentAnchor:
+        raise RuntimeError("AnchorNotFound")
+
+    with pytest.raises(ChainAnchorError, match="AnchorNotFound"):
+        get_segment(CAMERA_ID, STARTED, call_once=missing)

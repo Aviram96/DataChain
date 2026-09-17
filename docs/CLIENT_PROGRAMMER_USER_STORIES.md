@@ -179,10 +179,10 @@ _(Users consume results via playback and verification in Slice E; anchoring itse
 | ID | Story | Status |
 | -- | ----- | ------ |
 | CP-D.P1 | As the system, I want each one-minute segment uploaded to IPFS and to receive its CID. | Implemented — ingest `process_ingest_segment` calls Pinata; CLI still available |
-| CP-D.P2 | As the system, I want each segment’s CID and recording details anchored on Polygon via a Datachain smart contract keyed by camera (and segment identity). | Partial — ingest calls `anchor_segment`; live Amoy needs deploy + keys |
+| CP-D.P2 | As the system, I want each segment’s CID and recording details anchored on Polygon via a Datachain smart contract keyed by camera (and segment identity). | Implemented — ingest calls `anchor_segment`; live Amoy proven by maintainer |
 | CP-D.P3 | As the backend, I want Web3.py to submit anchor transactions, with graceful handling of RPC timeouts and gas failures, logging, and retry without losing the segment. | Implemented — `chain_anchor` + ingest keeps the temp file on failure |
 | CP-D.P4 | As a developer, I want a Hardhat deployment path for the contract on Polygon Amoy testnet. | Implemented — `contracts/scripts/deploy.ts`, `npm run deploy:amoy`; live Amoy deploy is run by the maintainer |
-| CP-D.P5 | As the system, I want segment metadata readable from the smart contract even if the database is unavailable. | TBD |
+| CP-D.P5 | As the system, I want segment metadata readable from the smart contract even if the database is unavailable. | Implemented — Web3.py `get_segment` (view call; no DB, no key) |
 | CP-D.P6 | As the backend, I want each finalized segment stored in PostgreSQL with camera ID, start time, end time, IPFS CID, segment hash, and transaction hash. | Implemented — `persist_video_record` from ingest after CID + tx hash |
 | CP-D.P7 | As the system, I want anchoring failures detected so a segment is not treated as fully proven before a successful on-chain proof. | Implemented — ingest returns False (keeps temp, no DB row) until a tx hash exists |
 | CP-D.P8 | As a developer, I want contract tests that store and return camera ID, CID, segment hash, start time, and end time. | Implemented — `contracts/test/Datachain.ts` |
@@ -286,3 +286,4 @@ Add here only if the teacher requires them in the client–programmer pack.
 | 2026-09-14 | CP-D.P4 Implemented — Hardhat `polygonAmoy` network + `scripts/deploy.ts` (`npm run deploy:amoy`). |
 | 2026-09-14 | CP-D.P3 Implemented — Web3.py `anchor_segment` with RPC timeout / gas retry; ingest not wired. |
 | 2026-09-15 | Ingest wires Pinata + chain + DB (`ingest_segment_processor`); CP-D.P1 / P6 / P7 Implemented; CP-D.P2 still Partial (live Amoy). |
+| 2026-09-17 | CP-D.P5 Implemented — Web3.py `get_segment` / `getSegment` (mocked tests; no DB). CP-D.P2 Implemented (live Amoy proven by maintainer). |
