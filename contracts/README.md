@@ -37,7 +37,7 @@ Equivalent: `npx hardhat compile`, `npx hardhat test`.
 npm run deploy:amoy
 ```
 
-The script refuses any network other than `polygonAmoy` and checks chain id **80002**. It prints the contract address and an [Amoy Polygonscan](https://amoy.polygonscan.com/) link. Save the address for a later backend slice (`DATACHAIN_CONTRACT_ADDRESS`). This repo does not send a deploy transaction until you run that command.
+The script refuses any network other than `polygonAmoy` or `localhost`. On Amoy it checks chain id **80002**, prints the contract address, and prints an [Amoy Polygonscan](https://amoy.polygonscan.com/) link. Save the address for the backend (`DATACHAIN_CONTRACT_ADDRESS`). This repo does not send a deploy transaction until you run that command.
 
 PowerShell example:
 
@@ -46,6 +46,24 @@ $env:AMOY_RPC_URL = "https://rpc-amoy.polygon.technology"
 $env:AMOY_PRIVATE_KEY = "0xYOUR_TESTNET_KEY"
 npm run deploy:amoy
 ```
+
+## Local Hardhat node (zero-cost proof of concept)
+
+Hardhat 3 already defines a `localhost` network at `http://127.0.0.1:8545` (chain id **31337**). No Amoy RPC or test POL is used.
+
+From `contracts/`, in one terminal:
+
+```bash
+npx hardhat node
+```
+
+In a second terminal:
+
+```bash
+npm run deploy:local
+```
+
+The script checks chain id **31337** and prints the contract address, deployer, and owner. The deployer is the owner. The node log is the transaction receipt; Polygonscan will not list it. Stopping the node wipes the chain.
 
 ## Dependency audits
 
@@ -63,6 +81,6 @@ Avoid **`npm audit fix --force`** unless you accept breaking upgrades across the
 | ---- | ------- |
 | `contracts/` | `.sol` sources (Hardhat default inner folder) |
 | `test/` | TypeScript tests (`node:test` + Viem) |
-| `scripts/deploy.ts` | Polygon Amoy deploy |
-| `hardhat.config.ts` | Compiler, `polygonAmoy` network |
+| `scripts/deploy.ts` | Polygon Amoy or local Hardhat deploy |
+| `hardhat.config.ts` | Compiler, `polygonAmoy` network (`localhost` is built in) |
 | `.env.example` | `AMOY_RPC_URL` / `AMOY_PRIVATE_KEY` placeholders |
