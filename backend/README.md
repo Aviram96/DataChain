@@ -216,7 +216,15 @@ python scripts/ingest_camera.py --camera-id 00000000-0000-0000-0000-000000000001
 python scripts/ingest_camera.py --all
 ```
 
-Ctrl+C stops ingest. RTSP uses TCP transport. Requires FFmpeg on `PATH`. Optional `--temp-dir` and `--duration` (default 60 seconds).
+Ctrl+C stops ingest. RTSP uses TCP transport. Requires FFmpeg on `PATH`. Optional `--temp-dir` and `--duration` (default 60 seconds). `--loop` plays a file or HTTP MP4 in real time and repeats it, so ingest keeps writing a new minute until you stop it.
+
+To simulate a live camera from a video file, without using this PC’s webcam, from `backend/`:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\live_camera.py --source C:\path\to\sample2.mp4
+```
+
+That plays the file in real time, repeats it, and serves `http://127.0.0.1:8090/live.mjpg`. Put that URL on the camera, then run `ingest_camera.py` without `--loop`. The page shows the live picture. Each closed minute is pinned, anchored, and saved. `--device "Integrated Camera"` uses the webcam instead.
 
 ## Video chunking (Epic 5, slice 2)
 

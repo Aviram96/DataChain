@@ -150,6 +150,35 @@ function CameraDetailContent() {
         </div>
       ) : null}
 
+      {liveFeedKind(camera.stream_url) ? (
+        <div className={ui.panel}>
+          <h2 className={ui.sectionTitle}>Live feed</h2>
+          <p className={`mt-1 ${ui.hint}`}>
+            Picture from the camera. Ingest turns it into one-minute recordings
+            while it is running.
+          </p>
+          {liveFeedKind(camera.stream_url) === "mjpeg" ? (
+            <img
+              key={camera.stream_url}
+              src={camera.stream_url}
+              alt="Live camera"
+              className="mt-3 w-full rounded-md bg-landing-ink"
+            />
+          ) : (
+            <video
+              key={camera.stream_url}
+              src={camera.stream_url}
+              controls
+              autoPlay
+              muted
+              loop
+              playsInline
+              className="mt-3 w-full rounded-md bg-landing-ink"
+            />
+          )}
+        </div>
+      ) : null}
+
       <dl className={`space-y-3 text-sm ${ui.panel}`}>
         <div>
           <dt className={ui.hint}>Stream URL</dt>
@@ -170,4 +199,22 @@ function CameraDetailContent() {
       <CameraRecordings cameraId={camera.id} />
     </div>
   );
+}
+
+function liveFeedKind(url: string): "mjpeg" | "video" | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+    if (/\.(mjpg|mjpeg)$/i.test(parsed.pathname)) {
+      return "mjpeg";
+    }
+    if (/\.(mp4|webm|ogg)$/i.test(parsed.pathname)) {
+      return "video";
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }

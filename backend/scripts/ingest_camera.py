@@ -90,6 +90,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar="SECONDS",
         help="Segment length in seconds (default 60)",
     )
+    parser.add_argument(
+        "--loop",
+        action="store_true",
+        help=(
+            "Play the source in real time and repeat it, so a file or HTTP "
+            "MP4 behaves like a camera that does not end."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -145,6 +153,7 @@ def main(argv: list[str] | None = None) -> int:
                 ffmpeg_executable=ffmpeg,
                 temp_dir=temp_dir,
                 segment_duration_seconds=duration,
+                loop_source=args.loop,
             )
         else:
             many = ingest_configs_for_all_active(
@@ -152,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
                 ffmpeg_executable=ffmpeg,
                 temp_dir=temp_dir,
                 segment_duration_seconds=duration,
+                loop_source=args.loop,
             )
     except CameraStreamError as exc:
         logging.error("%s", exc)

@@ -126,6 +126,7 @@ class CameraIngestConfig:
     ffmpeg_executable: str = DEFAULT_FFMPEG
     temp_dir: Path | None = None
     segment_duration_seconds: int = DEFAULT_CHUNK_DURATION_SECONDS
+    loop_source: bool = False
 
 
 def camera_chunk_dir(camera_id: UUID, base: Path | None = None) -> Path:
@@ -148,6 +149,7 @@ def chunker_config_for_ingest(config: CameraIngestConfig) -> VideoChunkerConfig:
         restart_on_crash=True,
         segment_pattern=camera_segment_pattern(config.camera_id),
         strftime_output=True,
+        loop_source=config.loop_source,
     )
 
 
@@ -200,6 +202,7 @@ def ingest_config_for_camera(
     ffmpeg_executable: str = DEFAULT_FFMPEG,
     temp_dir: Path | None = None,
     segment_duration_seconds: int | None = None,
+    loop_source: bool = False,
 ) -> CameraIngestConfig:
     """Attach an active camera and return ingest settings for its stream URL."""
     camera = get_active_camera(db, camera_id)
@@ -221,6 +224,7 @@ def ingest_config_for_camera(
         ffmpeg_executable=ffmpeg_executable,
         temp_dir=temp_dir,
         segment_duration_seconds=duration,
+        loop_source=loop_source,
     )
 
 
@@ -230,6 +234,7 @@ def ingest_configs_for_all_active(
     ffmpeg_executable: str = DEFAULT_FFMPEG,
     temp_dir: Path | None = None,
     segment_duration_seconds: int | None = None,
+    loop_source: bool = False,
 ) -> list[CameraIngestConfig]:
     """Build ingest settings for every active camera."""
     cameras = list_active_cameras(db)
@@ -240,6 +245,7 @@ def ingest_configs_for_all_active(
             ffmpeg_executable=ffmpeg_executable,
             temp_dir=temp_dir,
             segment_duration_seconds=segment_duration_seconds,
+            loop_source=loop_source,
         )
         for camera in cameras
     ]

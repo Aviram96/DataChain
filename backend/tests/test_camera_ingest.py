@@ -104,6 +104,19 @@ def test_build_ffmpeg_receive_command_http_skips_rtsp_flag(tmp_path: Path) -> No
     assert cmd[cmd.index("-i") + 1] == "https://192.0.2.51/stream"
 
 
+def test_build_ffmpeg_receive_command_loop_is_realtime(tmp_path: Path) -> None:
+    config = CameraIngestConfig(
+        camera_id=uuid4(),
+        stream_url="http://127.0.0.1:8080/sample2.mp4",
+        temp_dir=tmp_path,
+        loop_source=True,
+    )
+    cmd = build_ffmpeg_receive_command(config)
+    assert cmd[cmd.index("-re") + 1] == "-stream_loop"
+    assert cmd[cmd.index("-stream_loop") + 1] == "-1"
+    assert cmd[cmd.index("-i") + 1] == "http://127.0.0.1:8080/sample2.mp4"
+
+
 def test_ingest_config_for_camera_attaches_url(db_session: Session) -> None:
     _user, live, _http = _user_with_cameras(db_session)
     config = ingest_config_for_camera(db_session, live.id)

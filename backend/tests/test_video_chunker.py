@@ -89,6 +89,18 @@ def test_build_ffmpeg_chunk_command_live_url(tmp_path: Path) -> None:
     assert "-rtsp_transport" in cmd
     assert "-stream_loop" not in cmd
     assert cmd[cmd.index("-segment_time") + 1] == "60"
+    assert cmd[cmd.index("-c") + 1] == "copy"
+
+
+def test_build_ffmpeg_chunk_command_encodes_mjpeg(tmp_path: Path) -> None:
+    config = VideoChunkerConfig(
+        source_path=tmp_path / "unused.mp4",
+        temp_dir=tmp_path / "temp",
+        input_uri="http://127.0.0.1:8090/live.mjpg",
+    )
+    cmd = build_ffmpeg_chunk_command(config)
+    assert "-c" not in cmd or cmd[cmd.index("-c") + 1] != "copy"
+    assert cmd[cmd.index("-c:v") + 1] == "libx264"
 
 
 def test_build_ffmpeg_chunk_command_strftime(tmp_path: Path) -> None:

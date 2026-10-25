@@ -98,6 +98,26 @@ def ffmpeg_input(config: VideoChunkerConfig) -> str:
     return str(config.source_path)
 
 
+def _is_mjpeg_uri(uri: str) -> bool:
+    path = uri.lower().split("?", 1)[0]
+    return path.endswith(".mjpg") or path.endswith(".mjpeg")
+
+
+def output_codec_args(config: VideoChunkerConfig) -> list[str]:
+    """Copy compressed camera streams. Encode a browser MJPEG feed to H.264."""
+    if _is_mjpeg_uri(ffmpeg_input(config)):
+        return [
+            "-an",
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-pix_fmt",
+            "yuv420p",
+        ]
+    return ["-c", "copy"]
+
+
 def build_ffmpeg_chunk_command(config: VideoChunkerConfig) -> list[str]:
     """Build FFmpeg args: segment muxer, MP4 chunks of fixed duration."""
     cmd = [
@@ -114,8 +134,7 @@ def build_ffmpeg_chunk_command(config: VideoChunkerConfig) -> list[str]:
         [
             "-i",
             ffmpeg_input(config),
-            "-c",
-            "copy",
+            *output_codec_args(config),
             "-f",
             "segment",
             "-segment_time",
