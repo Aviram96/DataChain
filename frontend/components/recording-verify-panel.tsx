@@ -2,6 +2,7 @@ import { ui } from "@/lib/ui";
 import { polygonscanTxUrl } from "@/lib/verify-config";
 import {
   countByStatus,
+  formatLocalWindow,
   verifyStatusLabel,
   type VerifyReport,
   type VerifyStatus,
@@ -44,7 +45,7 @@ export function RecordingVerifyPanel({ report }: RecordingVerifyPanelProps) {
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0 space-y-1">
                   <p className="text-sm font-medium text-landing-ink">
-                    {formatSlot(result.slotIso, result.record?.ended_at)}
+                    {formatLocalWindow(result.slotIso, result.record?.ended_at)}
                   </p>
                   <p className={ui.hint}>{result.detail}</p>
                 </div>
@@ -110,13 +111,4 @@ function summaryCounts(counts: Record<VerifyStatus, number>): string {
     .filter(([key]) => counts[key] > 0)
     .map(([key, label]) => `${counts[key]} ${label}`);
   return parts.length ? ` — ${parts.join(", ")}` : "";
-}
-
-function formatSlot(startedAt: string, endedAt?: string): string {
-  const start = new Date(startedAt);
-  if (!endedAt) {
-    return start.toLocaleString();
-  }
-  const end = new Date(endedAt);
-  return `${start.toLocaleString()} – ${end.toLocaleTimeString()}`;
 }

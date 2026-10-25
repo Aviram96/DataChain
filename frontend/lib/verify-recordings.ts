@@ -227,3 +227,35 @@ function bytesToHex(value: string, hexChars: number): string {
 function normalizeHex(value: string): string {
   return value.trim().toLowerCase().replace(/^0x/, "");
 }
+
+const localDateTime: Intl.DateTimeFormatOptions = {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+};
+
+const localTime: Intl.DateTimeFormatOptions = {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+};
+
+/** 24-hour local time, so 16:30 is not shown as 4:30 PM. */
+export function formatLocalWindow(startedAt: string, endedAt?: string): string {
+  const start = new Date(startedAt);
+  const startText = start.toLocaleString(undefined, localDateTime);
+  if (!endedAt) {
+    return startText;
+  }
+  const end = new Date(endedAt);
+  const endText =
+    start.toDateString() === end.toDateString()
+      ? end.toLocaleTimeString(undefined, localTime)
+      : end.toLocaleString(undefined, localDateTime);
+  return `${startText} – ${endText}`;
+}

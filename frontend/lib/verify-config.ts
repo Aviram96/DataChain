@@ -18,7 +18,7 @@ export type VerifyConfig = {
 export function getVerifyConfig(): VerifyConfig {
   const rpcUrl =
     typeof window !== "undefined"
-      ? AMOY_RPC_PROXY
+      ? new URL(AMOY_RPC_PROXY, window.location.origin).href
       : process.env.NEXT_PUBLIC_POLYGON_RPC_URL?.trim() || DEFAULT_RPC_URL;
   const chainRaw = process.env.NEXT_PUBLIC_POLYGON_CHAIN_ID?.trim();
   const parsedChain = chainRaw ? Number.parseInt(chainRaw, 10) : DEFAULT_CHAIN_ID;

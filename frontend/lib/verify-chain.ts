@@ -1,4 +1,4 @@
-import { Contract, JsonRpcProvider } from "ethers";
+import { Contract, Interface, JsonRpcProvider } from "ethers";
 
 import { DATACHAIN_ABI } from "./datachain-abi";
 import { getVerifyConfig } from "./verify-config";
@@ -7,6 +7,8 @@ import {
   uuidToBytes16,
   type ChainRead,
 } from "./verify-recordings";
+
+const datachainInterface = new Interface(DATACHAIN_ABI);
 
 export function createDatachainContract(): Contract {
   const config = getVerifyConfig();
@@ -78,10 +80,21 @@ export async function mapPool<T, R>(
 function isAnchorNotFound(error: unknown): boolean {
   if (typeof error === "object" && error !== null) {
     const typed = error as {
+      data?: unknown;
       revert?: { name?: string };
       shortMessage?: string;
       message?: string;
     };
+    if (typeof typed.data === "string") {
+      try {
+        const parsed = datachainInterface.parseError(typed.data);
+        if (parsed?.name === "AnchorNotFound") {
+          return true;
+        }
+      } catch {
+        // Revert data is not an error from this contract.
+      }
+    }
     if (typed.revert?.name === "AnchorNotFound") {
       return true;
     }

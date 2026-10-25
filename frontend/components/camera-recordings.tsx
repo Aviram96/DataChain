@@ -20,6 +20,7 @@ import {
   clipSubRange,
   expectedMinuteStarts,
   findRecordForSlot,
+  formatLocalWindow,
   MAX_EXPECTED_MINUTES,
   type VerifyMinuteResult,
   type VerifyReport,
@@ -394,6 +395,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
           <input
             id="recording-start"
             type="time"
+            lang="en-GB"
             value={startInput}
             onChange={(event) => setStartInput(event.target.value)}
             className={ui.input}
@@ -406,6 +408,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
           <input
             id="recording-end"
             type="time"
+            lang="en-GB"
             value={endInput}
             onChange={(event) => setEndInput(event.target.value)}
             className={ui.input}
@@ -452,6 +455,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
             <input
               id="verify-part-start"
               type="time"
+              lang="en-GB"
               value={partialStart}
               onChange={(event) => setPartialStart(event.target.value)}
               className={ui.input}
@@ -464,6 +468,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
             <input
               id="verify-part-end"
               type="time"
+              lang="en-GB"
               value={partialEnd}
               onChange={(event) => setPartialEnd(event.target.value)}
               className={ui.input}
@@ -506,7 +511,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <p className="font-medium text-landing-ink">
-                      {formatWindow(record.started_at, record.ended_at)}
+                      {formatLocalWindow(record.started_at, record.ended_at)}
                     </p>
                     {rowStatus ? <VerifyBadge status={rowStatus} /> : null}
                   </div>
@@ -628,7 +633,7 @@ function RecordingPlayer({
               Watch recording
             </h3>
             <p className={`mt-1 ${ui.muted}`}>
-              {formatWindow(record.started_at, record.ended_at)}
+              {formatLocalWindow(record.started_at, record.ended_at)}
             </p>
           </div>
           <button type="button" onClick={onClose} className={ui.btnSecondary}>
@@ -700,12 +705,6 @@ function isoToLocalTime(iso: string): string {
   const hours = String(parsed.getHours()).padStart(2, "0");
   const minutes = String(parsed.getMinutes()).padStart(2, "0");
   return `${hours}:${minutes}`;
-}
-
-function formatWindow(startedAt: string, endedAt: string): string {
-  const start = new Date(startedAt);
-  const end = new Date(endedAt);
-  return `${start.toLocaleString()} – ${end.toLocaleTimeString()}`;
 }
 
 function statusForRecord(report: VerifyReport | null, recordId: string) {

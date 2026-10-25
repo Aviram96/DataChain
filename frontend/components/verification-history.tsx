@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { networkErrorMessage } from "@/lib/api";
 import { CamerasApiError } from "@/lib/cameras-api";
 import { ui } from "@/lib/ui";
+import { formatLocalWindow } from "@/lib/verify-recordings";
 import {
   listVerificationAttempts,
   type VerificationAttemptSummary,
@@ -91,7 +92,7 @@ export function VerificationHistory({
             >
               <div className="min-w-0 space-y-1">
                 <p className="text-sm font-medium text-landing-ink">
-                  {formatWindow(attempt.started_at, attempt.ended_at)}
+                  {formatLocalWindow(attempt.started_at, attempt.ended_at)}
                 </p>
                 <p className={ui.hint}>
                   {scopeLabel(attempt.scope)} ·{" "}
@@ -146,10 +147,4 @@ function scopeLabel(scope: VerificationScope): string {
     case "minute":
       return "One minute";
   }
-}
-
-function formatWindow(startedAt: string, endedAt: string): string {
-  const start = new Date(startedAt);
-  const end = new Date(endedAt);
-  return `${start.toLocaleString()} – ${end.toLocaleTimeString()}`;
 }
