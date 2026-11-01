@@ -21,6 +21,7 @@ from app.services.segment_identity import (
 )
 
 DEFAULT_FFPROBE = "ffprobe"
+INCOMPLETE_MP4_ERROR = "Incomplete MP4 (missing ftyp or moov)"
 _HASH_CHUNK_SIZE = 1024 * 1024
 
 
@@ -177,7 +178,7 @@ def check_segment(
         return SegmentIntegrityResult(
             ok=False,
             path=path,
-            error="Incomplete MP4 (missing ftyp or moov)",
+            error=INCOMPLETE_MP4_ERROR,
             size_bytes=size_bytes,
             identity=identity,
         )

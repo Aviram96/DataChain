@@ -60,8 +60,10 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   const playbackErrorFor = useRef<string | null>(null);
 
   const load = useCallback(
-    async (pageToLoad: number) => {
-      setLoading(true);
+    async (pageToLoad: number, options?: { silent?: boolean }) => {
+      if (!options?.silent) {
+        setLoading(true);
+      }
       try {
         const data = await listRecordings(cameraId, {
           page: pageToLoad,
@@ -74,6 +76,9 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
         setPage(data.page);
         setPages(data.pages);
       } catch (error) {
+        if (options?.silent) {
+          return;
+        }
         if (error instanceof CamerasApiError) {
           showToast(error.message, "error");
         } else {
@@ -82,7 +87,9 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
         setItems([]);
         setTotal(0);
       } finally {
-        setLoading(false);
+        if (!options?.silent) {
+          setLoading(false);
+        }
       }
     },
     [applied, cameraId, showToast]
@@ -90,6 +97,13 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
 
   useEffect(() => {
     void load(page);
+  }, [load, page]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void load(page, { silent: true });
+    }, 20000);
+    return () => window.clearInterval(timer);
   }, [load, page]);
 
   useEffect(() => {
@@ -361,14 +375,22 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   const hasRange = Boolean(applied.startedAt || applied.endedAt);
   const emptyMessage = hasRange
     ? "No recordings match that date and time range."
-    : "No recordings for this camera yet.";
+    : "No one-minute clips saved for this camera yet. The 10 most recent will appear here.";
+  const listSummary = recordingListSummary({
+    hasRange,
+    page,
+    pageSize: PAGE_SIZE,
+    total,
+  });
 
   return (
     <section className="space-y-4">
       <div>
         <h2 className={`${ui.sectionTitle} text-left`}>Recordings</h2>
         <p className={`mt-1 ${ui.pageSubtitle}`}>
-          Search by date and time, then choose watch, download, or verify.
+          {hasRange
+            ? "Clips that overlap the date and time you chose. Each row is one segment."
+            : "The 10 most recent one-minute clips are listed here. Search by date and time to narrow them."}
         </p>
       </div>
 
@@ -513,6 +535,9 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
                     <p className="font-medium text-landing-ink">
                       {formatLocalWindow(record.started_at, record.ended_at)}
                     </p>
+                    <p className={ui.hint}>
+                      {clipLengthLabel(record.started_at, record.ended_at)}
+                    </p>
                     {rowStatus ? <VerifyBadge status={rowStatus} /> : null}
                   </div>
                   <p className={`break-all ${ui.hint}`}>CID {record.ipfs_cid}</p>
@@ -549,33 +574,32 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
         </ul>
       )}
 
-      {pages > 1 && total > 0 ? (
+      {!loading && total > 0 ? (
         <div className="flex flex-wrap items-center justify-between gap-4 border-t border-landing-ink/10 pt-4">
-          <p className={ui.hint}>
-            Showing {(page - 1) * PAGE_SIZE + 1}–
-            {Math.min(page * PAGE_SIZE, total)} of {total} recordings
-          </p>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              disabled={page <= 1 || loading}
-              onClick={() => setPage(page - 1)}
-              className={ui.btnSecondary}
-            >
-              Previous
-            </button>
-            <span className={ui.muted}>
-              Page {page} of {pages}
-            </span>
-            <button
-              type="button"
-              disabled={page >= pages || loading}
-              onClick={() => setPage(page + 1)}
-              className={ui.btnSecondary}
-            >
-              Next
-            </button>
-          </div>
+          <p className={ui.hint}>{listSummary}</p>
+          {pages > 1 ? (
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                disabled={page <= 1 || loading}
+                onClick={() => setPage(page - 1)}
+                className={ui.btnSecondary}
+              >
+                Previous
+              </button>
+              <span className={ui.muted}>
+                Page {page} of {pages}
+              </span>
+              <button
+                type="button"
+                disabled={page >= pages || loading}
+                onClick={() => setPage(page + 1)}
+                className={ui.btnSecondary}
+              >
+                Next
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -653,6 +677,48 @@ function RecordingPlayer({
       </div>
     </div>
   );
+}
+
+function recordingListSummary(input: {
+  hasRange: boolean;
+  page: number;
+  pageSize: number;
+  total: number;
+}): string {
+  const start = (input.page - 1) * input.pageSize + 1;
+  const end = Math.min(input.page * input.pageSize, input.total);
+  if (input.hasRange) {
+    return `Showing ${start}–${end} of ${input.total} clips in this search.`;
+  }
+  if (input.total <= input.pageSize) {
+    const noun = input.total === 1 ? "clip" : "clips";
+    return `Showing ${input.total} most recent one-minute ${noun}.`;
+  }
+  if (input.page === 1) {
+    return `Showing the ${input.pageSize} most recent of ${input.total} one-minute clips.`;
+  }
+  return `Showing ${start}–${end} of ${input.total} one-minute clips, newest first.`;
+}
+
+function clipLengthLabel(startedAt: string, endedAt: string): string {
+  const seconds = Math.round(
+    (new Date(endedAt).getTime() - new Date(startedAt).getTime()) / 1000
+  );
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return "One segment";
+  }
+  if (seconds >= 50 && seconds <= 70) {
+    return "1 minute";
+  }
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (minutes > 0 && rest === 0) {
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
+  }
+  if (minutes > 0) {
+    return `${minutes} min ${rest} sec`;
+  }
+  return `${seconds} sec`;
 }
 
 function rangeFromForm(

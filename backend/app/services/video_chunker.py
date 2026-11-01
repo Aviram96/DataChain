@@ -130,6 +130,10 @@ def build_ffmpeg_chunk_command(config: VideoChunkerConfig) -> list[str]:
         cmd.extend(config.extra_input_args)
     if config.loop_source:
         cmd.extend(["-re", "-stream_loop", "-1"])
+    if _is_mjpeg_uri(ffmpeg_input(config)):
+        # A browser MJPEG feed has no clock. Stamp each frame when it arrives
+        # so one minute of recording plays back in one minute.
+        cmd.extend(["-use_wallclock_as_timestamps", "1"])
     cmd.extend(
         [
             "-i",

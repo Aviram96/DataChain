@@ -167,7 +167,7 @@ Keep the **Status** column in this table aligned with the repository as work lan
 
 **Exit criteria**: Filters compose sensibly with pagination; player uses gateway URL pattern documented in env config.
 
-**Progress note**: A global **My Videos** page (US-7.1) is deferred; footage stays camera-scoped on `/cameras/[id]`. E1 lists/filters/paginates that camera’s minutes (`GET /cameras/{id}/recordings`). E2 streams a selected minute from `{NEXT_PUBLIC_IPFS_GATEWAY}/ipfs/{cid}` (default `https://gateway.pinata.cloud`; see `frontend/.env.example`).
+**Progress note**: A global **My Videos** page (US-7.1) is deferred; footage stays camera-scoped on `/cameras/[id]`. E1 lists/filters/paginates that camera’s minutes (`GET /cameras/{id}/recordings`). With no date chosen, the page shows the **10 newest** one-minute clips. E2 streams a selected minute from `{NEXT_PUBLIC_IPFS_GATEWAY}/ipfs/{cid}` (default `https://gateway.pinata.cloud`; see `frontend/.env.example`).
 
 ---
 

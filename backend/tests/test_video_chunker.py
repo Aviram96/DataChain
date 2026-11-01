@@ -101,6 +101,8 @@ def test_build_ffmpeg_chunk_command_encodes_mjpeg(tmp_path: Path) -> None:
     cmd = build_ffmpeg_chunk_command(config)
     assert "-c" not in cmd or cmd[cmd.index("-c") + 1] != "copy"
     assert cmd[cmd.index("-c:v") + 1] == "libx264"
+    assert cmd[cmd.index("-use_wallclock_as_timestamps") + 1] == "1"
+    assert cmd.index("-use_wallclock_as_timestamps") < cmd.index("-i")
 
 
 def test_build_ffmpeg_chunk_command_strftime(tmp_path: Path) -> None:
