@@ -1,8 +1,8 @@
 """Unique segment filenames: camera ID + recording time (Slice C / CP-C.P4).
 
-FFmpeg ``-strftime 1`` writes UTC-style stamps into the name. Start/end times
-are derived from that stamp plus the configured segment duration (no DB row
-until Slice D).
+The filename ends in a literal ``Z``. Ingest runs FFmpeg with ``TZ=UTC`` because
+``-strftime`` otherwise expands in local time and the stamp would be read as
+UTC twice. Start/end times come from that UTC stamp plus the segment duration.
 """
 
 from __future__ import annotations

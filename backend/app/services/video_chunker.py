@@ -118,6 +118,19 @@ def output_codec_args(config: VideoChunkerConfig) -> list[str]:
     return ["-c", "copy"]
 
 
+def ffmpeg_subprocess_env(config: VideoChunkerConfig) -> dict[str, str] | None:
+    """Environment for the FFmpeg process.
+
+    ``-strftime`` expands with local time. Segment names end in a literal ``Z``
+    and are parsed as UTC, so the process clock for that expansion must be UTC.
+    """
+    if not config.strftime_output:
+        return None
+    env = os.environ.copy()
+    env["TZ"] = "UTC"
+    return env
+
+
 def build_ffmpeg_chunk_command(config: VideoChunkerConfig) -> list[str]:
     """Build FFmpeg args: segment muxer, MP4 chunks of fixed duration."""
     cmd = [
@@ -198,11 +211,16 @@ class VideoChunker:
             mode,
             restart_note,
         )
+        popen_kwargs: dict[str, object] = {}
+        env = ffmpeg_subprocess_env(self._config)
+        if env is not None:
+            popen_kwargs["env"] = env
         run_config = FFmpegRunConfig(
             build_command=lambda: build_ffmpeg_chunk_command(self._config),
             restart_on_crash=restart_on_crash,
             restart_delay_seconds=resolve_restart_delay_seconds(),
             max_restarts=resolve_max_restarts(),
+            popen_kwargs=popen_kwargs,
         )
         supervisor = FFmpegSupervisor(run_config)
         try:

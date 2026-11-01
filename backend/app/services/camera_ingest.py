@@ -53,6 +53,7 @@ from app.services.video_chunker import (
     VideoChunkerConfig,
     build_ffmpeg_chunk_command,
     ensure_temp_dir,
+    ffmpeg_subprocess_env,
     resolve_chunk_duration_seconds,
 )
 
@@ -305,12 +306,17 @@ class CameraIngest:
         self._with_session(
             lambda db: clear_ingest_offline(db, self._config.camera_id)
         )
+        popen_kwargs: dict[str, object] = {}
+        env = ffmpeg_subprocess_env(chunk_config)
+        if env is not None:
+            popen_kwargs["env"] = env
         run_config = FFmpegRunConfig(
             build_command=lambda: build_ffmpeg_chunk_command(chunk_config),
             restart_on_crash=True,
             restart_delay_seconds=resolve_restart_delay_seconds(),
             max_restarts=max_restarts,
             log_label=f"camera {self._config.camera_id}",
+            popen_kwargs=popen_kwargs,
         )
         self._supervisor = FFmpegSupervisor(run_config)
         worker = ChunkProcessingWorker(

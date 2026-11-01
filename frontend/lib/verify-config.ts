@@ -42,3 +42,8 @@ export function polygonscanTxUrl(txHash: string): string | null {
   const hash = cleaned.startsWith("0x") ? cleaned : `0x${cleaned}`;
   return `${getVerifyConfig().polygonscanTxBase}/${hash}`;
 }
+
+/** Hardhat (31337) and Ganache (1337). A public explorer has no receipt for these. */
+export function isLocalDevChain(chainId = getVerifyConfig().chainId): boolean {
+  return chainId === 31337 || chainId === 1337;
+}

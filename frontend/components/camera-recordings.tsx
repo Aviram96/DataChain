@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 
 import { networkErrorMessage } from "@/lib/api";
 import { CamerasApiError } from "@/lib/cameras-api";
@@ -20,13 +27,20 @@ import {
   clipSubRange,
   expectedMinuteStarts,
   findRecordForSlot,
+  minuteAlreadyCovered,
   formatLocalWindow,
+  formatVerifySlot,
   MAX_EXPECTED_MINUTES,
+  verifyStatusMeaning,
   type VerifyMinuteResult,
   type VerifyReport,
 } from "@/lib/verify-recordings";
 
-import { RecordingVerifyPanel, VerifyBadge } from "./recording-verify-panel";
+import {
+  ChainTransaction,
+  RecordingVerifyPanel,
+  VerifyBadge,
+} from "./recording-verify-panel";
 import { useToast } from "./toast-provider";
 import { VerificationHistory } from "./verification-history";
 
@@ -57,7 +71,11 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   const [historyTick, setHistoryTick] = useState(0);
   const [partialStart, setPartialStart] = useState("");
   const [partialEnd, setPartialEnd] = useState("");
+  const [verifyTargetId, setVerifyTargetId] = useState<string | null>(null);
+  const [mediaPlaying, setMediaPlaying] = useState(false);
   const playbackErrorFor = useRef<string | null>(null);
+  const selectedRef = useRef<HTMLElement>(null);
+  const scrolledForId = useRef<string | null>(null);
 
   const load = useCallback(
     async (pageToLoad: number, options?: { silent?: boolean }) => {
@@ -107,6 +125,18 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   }, [load, page]);
 
   useEffect(() => {
+    if (!watching) {
+      scrolledForId.current = null;
+      return;
+    }
+    if (scrolledForId.current === watching.id) {
+      return;
+    }
+    scrolledForId.current = watching.id;
+    selectedRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [watching]);
+
+  useEffect(() => {
     setVerifyReport(null);
     if (applied.startedAt && applied.endedAt) {
       setPartialStart(isoToLocalTime(applied.startedAt));
@@ -152,6 +182,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
 
   function closeWatch() {
     setWatching(null);
+    setMediaPlaying(false);
   }
 
   function handlePlaybackError() {
@@ -180,6 +211,9 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
       return;
     }
 
+    setVerifyTargetId(
+      scope === "minute" ? (recordsOverride?.[0]?.id ?? null) : null
+    );
     setVerifying(true);
     try {
       const records =
@@ -190,12 +224,15 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
         }));
       const contract = createDatachainContract();
       const used = new Set<string>();
-      const slotWork = slots.map((slot) => {
+      const slotWork = slots.flatMap((slot) => {
+        if (minuteAlreadyCovered(records, slot, range)) {
+          return [];
+        }
         const record = findRecordForSlot(records, slot) ?? null;
         if (record) {
           used.add(record.id);
         }
-        return { slot, record };
+        return [{ slot, record }];
       });
       const extras = records
         .filter((record) => !used.has(record.id))
@@ -254,6 +291,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
       }
     } finally {
       setVerifying(false);
+      setVerifyTargetId(null);
     }
   }
 
@@ -320,12 +358,18 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   }
 
   function verifyOne(record: VideoRecordPublic) {
+    playbackErrorFor.current = null;
+    setWatching(record);
     void runVerify(
       { startedAt: record.started_at, endedAt: record.ended_at },
       [record],
       "minute"
     );
   }
+
+  const onPlayingChange = useCallback((playing: boolean) => {
+    setMediaPlaying(playing);
+  }, []);
 
   async function runDownload(range: { startedAt: string; endedAt: string }) {
     setDownloading(true);
@@ -383,14 +427,43 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
     total,
   });
 
+  const minuteReportOnOpenClip =
+    watching != null &&
+    verifyReport?.scope === "minute" &&
+    verifyReport.results.some((result) => result.record?.id === watching.id);
+  const rangeVerifying = verifying && verifyTargetId === null;
+
   return (
-    <section className="space-y-4">
+    <div className="space-y-8">
+      <SelectedRecording
+        sectionRef={selectedRef}
+        record={watching}
+        report={verifyReport}
+        checking={verifying && verifyTargetId === watching?.id}
+        downloading={downloading}
+        busy={busy}
+        onClose={closeWatch}
+        onVerify={() => {
+          if (watching) {
+            verifyOne(watching);
+          }
+        }}
+        onDownload={() => {
+          if (watching) {
+            downloadOne(watching);
+          }
+        }}
+        onPlaybackError={handlePlaybackError}
+        onPlayingChange={onPlayingChange}
+      />
+
+      <section className="space-y-4">
       <div>
-        <h2 className={`${ui.sectionTitle} text-left`}>Recordings</h2>
+        <h2 className={`${ui.sectionTitle} text-left`}>Saved clips</h2>
         <p className={`mt-1 ${ui.pageSubtitle}`}>
           {hasRange
-            ? "Clips that overlap the date and time you chose. Each row is one segment."
-            : "The 10 most recent one-minute clips are listed here. Search by date and time to narrow them."}
+            ? "Clips that overlap the date and time you chose."
+            : "The 10 newest one-minute clips. Search by date and time to narrow the list."}
         </p>
       </div>
 
@@ -440,22 +513,6 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
           <button type="submit" className={ui.btnPrimary}>
             Search
           </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={verifyAppliedRange}
-            className={ui.btnSecondary}
-          >
-            {verifying ? "Verifying…" : "Verify"}
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={downloadAppliedRange}
-            className={ui.btnSecondary}
-          >
-            {downloading ? "Downloading…" : "Download"}
-          </button>
           <button type="button" onClick={clearSearch} className={ui.btnSecondary}>
             Clear
           </button>
@@ -467,9 +524,27 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
           className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end ${ui.panel}`}
         >
           <p className={`sm:col-span-2 lg:col-span-4 text-left ${ui.muted}`}>
-            Use part of this range. Minutes outside the times below are not
-            verified or downloaded.
+            Check or download this search, or only the part between the times
+            below.
           </p>
+          <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-4">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={verifyAppliedRange}
+              className={ui.btnSecondary}
+            >
+              {rangeVerifying ? "Verifying…" : "Verify search"}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={downloadAppliedRange}
+              className={ui.btnSecondary}
+            >
+              {downloading ? "Downloading…" : "Download search"}
+            </button>
+          </div>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="verify-part-start" className={ui.hint}>
               Part start
@@ -503,7 +578,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
               onClick={verifyPartialRange}
               className={ui.btnSecondary}
             >
-              {verifying ? "Verifying…" : "Verify part"}
+              {rangeVerifying ? "Verifying…" : "Verify part"}
             </button>
             <button
               type="button"
@@ -517,18 +592,25 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
         </div>
       ) : null}
 
-      {verifyReport ? <RecordingVerifyPanel report={verifyReport} /> : null}
+      {verifyReport && !minuteReportOnOpenClip ? (
+        <RecordingVerifyPanel report={verifyReport} />
+      ) : null}
 
       {loading ? (
         <p className={ui.muted}>Loading recordings…</p>
       ) : items.length === 0 ? (
         <p className={`${ui.panelMuted} text-left`}>{emptyMessage}</p>
       ) : (
-        <ul className="space-y-3">
+        <ul className="space-y-3" aria-label="Saved clips">
           {items.map((record) => {
             const rowStatus = statusForRecord(verifyReport, record.id);
+            const open = watching?.id === record.id;
             return (
-              <li key={record.id} className={ui.panel}>
+              <li
+                key={record.id}
+                aria-current={open ? "true" : undefined}
+                className={`${ui.panel} ${open ? "ring-2 ring-landing-accent/35" : ""}`}
+              >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -538,9 +620,13 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
                     <p className={ui.hint}>
                       {clipLengthLabel(record.started_at, record.ended_at)}
                     </p>
+                    {open ? (
+                      <span className="text-xs font-semibold text-landing-accent">
+                        {mediaPlaying ? "Playing" : "Selected"}
+                      </span>
+                    ) : null}
                     {rowStatus ? <VerifyBadge status={rowStatus} /> : null}
                   </div>
-                  <p className={`break-all ${ui.hint}`}>CID {record.ipfs_cid}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -564,7 +650,9 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
                     onClick={() => verifyOne(record)}
                     className={ui.btnCompact}
                   >
-                    Verify
+                    {verifying && verifyTargetId === record.id
+                      ? "Verifying…"
+                      : "Verify"}
                   </button>
                 </div>
               </div>
@@ -602,79 +690,303 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
           ) : null}
         </div>
       ) : null}
+      </section>
 
       <VerificationHistory cameraId={cameraId} refreshKey={historyTick} />
+    </div>
+  );
+}
 
-      {watching ? (
-        <RecordingPlayer
-          record={watching}
-          src={ipfsGatewayUrl(watching.ipfs_cid)}
-          onClose={closeWatch}
-          onPlaybackError={handlePlaybackError}
-        />
-      ) : null}
+function SelectedRecording({
+  sectionRef,
+  record,
+  report,
+  checking,
+  downloading,
+  busy,
+  onClose,
+  onVerify,
+  onDownload,
+  onPlaybackError,
+  onPlayingChange,
+}: {
+  sectionRef: RefObject<HTMLElement | null>;
+  record: VideoRecordPublic | null;
+  report: VerifyReport | null;
+  checking: boolean;
+  downloading: boolean;
+  busy: boolean;
+  onClose: () => void;
+  onVerify: () => void;
+  onDownload: () => void;
+  onPlaybackError: () => void;
+  onPlayingChange: (playing: boolean) => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [position, setPosition] = useState<{
+    current: number;
+    duration: number | null;
+  }>({ current: 0, duration: null });
+  const [playing, setPlaying] = useState(false);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key !== "Escape" || !record) {
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+      onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, record]);
+
+  useEffect(() => {
+    setPosition({ current: 0, duration: null });
+    setPlaying(false);
+  }, [record?.id]);
+
+  useEffect(() => {
+    onPlayingChange(playing);
+  }, [onPlayingChange, playing]);
+
+  useEffect(() => {
+    return () => onPlayingChange(false);
+  }, [onPlayingChange]);
+
+  function syncPosition() {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+    setPosition({
+      current: video.currentTime,
+      duration: Number.isFinite(video.duration) ? video.duration : null,
+    });
+  }
+
+  const clipStatus = record
+    ? statusForRecord(checking ? null : report, record.id)
+    : undefined;
+  const windowLabel = record
+    ? formatLocalWindow(record.started_at, record.ended_at)
+    : "";
+  const cid = record?.ipfs_cid.trim() ?? "";
+
+  return (
+    <section
+      ref={sectionRef}
+      id="open-recording"
+      aria-labelledby="open-recording-title"
+      className={`${ui.panel} scroll-mt-6`}
+    >
+      <h2 id="open-recording-title" className={ui.sectionTitle}>
+        This recording
+      </h2>
+      {record ? (
+        <div className="mt-3 space-y-4">
+          <div>
+            <p className="text-base font-medium text-landing-ink">{windowLabel}</p>
+            <p className={`mt-1 ${ui.muted}`}>
+              {clipLengthLabel(record.started_at, record.ended_at)} saved
+            </p>
+          </div>
+
+          {cid ? (
+            <video
+              key={record.id}
+              ref={videoRef}
+              controls
+              autoPlay
+              playsInline
+              aria-label={windowLabel}
+              className="w-full rounded-md bg-landing-ink"
+              onError={onPlaybackError}
+              onLoadedMetadata={syncPosition}
+              onDurationChange={syncPosition}
+              onTimeUpdate={syncPosition}
+              onSeeked={syncPosition}
+              onPlay={() => {
+                setPlaying(true);
+                syncPosition();
+              }}
+              onPause={() => {
+                setPlaying(false);
+                syncPosition();
+              }}
+              onEnded={() => {
+                setPlaying(false);
+                syncPosition();
+              }}
+            >
+              <source src={ipfsGatewayUrl(cid)} type="video/mp4" />
+            </video>
+          ) : (
+            <p className={ui.muted}>
+              This clip has no file address, so it cannot be played.
+            </p>
+          )}
+
+          <PlaybackPosition
+            current={position.current}
+            duration={position.duration}
+            playing={playing}
+            windowLabel={windowLabel}
+            canPlay={Boolean(cid)}
+          />
+
+          <div>
+            <h3 className="text-sm font-semibold text-landing-ink">
+              Evidence for this clip
+            </h3>
+            <dl className="mt-3 space-y-3">
+              <div>
+                <dt className={ui.hint}>Time window</dt>
+                <dd className="text-sm text-landing-ink/85">{windowLabel}</dd>
+              </div>
+              <div>
+                <dt className={ui.hint}>Duration</dt>
+                <dd className="text-sm text-landing-ink/85">
+                  {clipLengthLabel(record.started_at, record.ended_at)}
+                </dd>
+              </div>
+              <div>
+                <dt className={ui.hint}>IPFS CID</dt>
+                <dd className="mt-0.5 break-all font-mono text-xs leading-relaxed text-landing-ink/85">
+                  {cid || "—"}
+                </dd>
+                <p className={`mt-0.5 ${ui.hint}`}>Address of this file in storage.</p>
+              </div>
+              <div>
+                <dt className={ui.hint}>Segment hash</dt>
+                <dd className="mt-0.5 break-all font-mono text-xs leading-relaxed text-landing-ink/85">
+                  {record.segment_hash.trim() || "—"}
+                </dd>
+                <p className={`mt-0.5 ${ui.hint}`}>Fingerprint of this minute.</p>
+              </div>
+              <div>
+                <dt className={ui.hint}>Transaction</dt>
+                <dd className="mt-0.5">
+                  <ChainTransaction txHash={record.tx_hash} />
+                </dd>
+              </div>
+            </dl>
+          </div>
+
+          <div className="rounded-xl border border-landing-ink/10 bg-white/70 p-3">
+            <p className={ui.hint}>Check</p>
+            {checking ? (
+              <p className={`mt-1 ${ui.muted}`}>
+                Checking this clip against the chain…
+              </p>
+            ) : clipStatus ? (
+              <div className="mt-1 space-y-2">
+                <VerifyBadge status={clipStatus} />
+                <p className={ui.muted}>{verifyStatusMeaning(clipStatus)}</p>
+                {report?.scope === "minute" && report.results.length > 1 ? (
+                  <ul className="space-y-2">
+                    {report.results.map((result) => (
+                      <li
+                        key={`${result.slotIso}-${result.record?.id ?? "gap"}`}
+                        className="flex flex-wrap items-center justify-between gap-2"
+                      >
+                        <span className="text-sm text-landing-ink/85">
+                          {formatVerifySlot(result.slotIso, result.record?.ended_at)}
+                        </span>
+                        <VerifyBadge status={result.status} />
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : (
+              <p className={`mt-1 ${ui.muted}`}>
+                Not checked yet. Verify this clip to see whether it matches the
+                chain.
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onVerify}
+              className={ui.btnPrimary}
+            >
+              {checking ? "Verifying…" : "Verify"}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onDownload}
+              className={ui.btnSecondary}
+            >
+              {downloading ? "Downloading…" : "Download"}
+            </button>
+            <button type="button" onClick={onClose} className={ui.btnSecondary}>
+              Close
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className={`mt-2 ${ui.muted}`}>
+          No clip is open. Choose Watch on a saved minute below. The picture,
+          the time, and the proof for that minute show up here.
+        </p>
+      )}
     </section>
   );
 }
 
-function RecordingPlayer({
-  record,
-  src,
-  onClose,
-  onPlaybackError,
+function PlaybackPosition({
+  current,
+  duration,
+  playing,
+  windowLabel,
+  canPlay,
 }: {
-  record: VideoRecordPublic;
-  src: string;
-  onClose: () => void;
-  onPlaybackError: () => void;
+  current: number;
+  duration: number | null;
+  playing: boolean;
+  windowLabel: string;
+  canPlay: boolean;
 }) {
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const percent =
+    duration && duration > 0
+      ? Math.min(100, Math.max(0, (current / duration) * 100))
+      : 0;
+  const totalLabel = duration == null ? "—" : formatMediaTime(duration);
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-landing-ink/40 p-4"
-      role="presentation"
-      onClick={onClose}
-    >
+    <div>
+      <p className={ui.hint}>Playback</p>
+      <p className="mt-1 text-base font-medium tabular-nums text-landing-ink">
+        {canPlay ? formatMediaTime(current) : "—"}
+        <span className="font-normal text-landing-ink/45"> / </span>
+        {canPlay ? totalLabel : "—"}
+      </p>
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="recording-player-title"
-        className={`${ui.panel} w-full max-w-3xl`}
-        onClick={(event) => event.stopPropagation()}
+        className="mt-2 h-1.5 overflow-hidden rounded-full bg-landing-ink/10"
+        aria-hidden
       >
-        <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h3 id="recording-player-title" className={ui.sectionTitle}>
-              Watch recording
-            </h3>
-            <p className={`mt-1 ${ui.muted}`}>
-              {formatLocalWindow(record.started_at, record.ended_at)}
-            </p>
-          </div>
-          <button type="button" onClick={onClose} className={ui.btnSecondary}>
-            Close
-          </button>
-        </div>
-        <video
-          key={record.id}
-          controls
-          autoPlay
-          playsInline
-          className="w-full rounded-md bg-landing-ink"
-          onError={onPlaybackError}
-        >
-          <source src={src} type="video/mp4" />
-        </video>
+        <div
+          className="h-full rounded-full bg-landing-accent"
+          style={{ width: `${percent}%` }}
+        />
       </div>
+      <p className={`mt-2 ${ui.muted}`}>
+        {canPlay ? (playing ? "Playing" : "Paused") : "Not playing"}
+        {" · "}
+        {windowLabel}. Highlighted in the list below.
+      </p>
     </div>
   );
 }
@@ -698,6 +1010,16 @@ function recordingListSummary(input: {
     return `Showing the ${input.pageSize} most recent of ${input.total} one-minute clips.`;
   }
   return `Showing ${start}–${end} of ${input.total} one-minute clips, newest first.`;
+}
+
+function formatMediaTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return "—";
+  }
+  const total = Math.floor(seconds);
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  return `${minutes}:${String(rest).padStart(2, "0")}`;
 }
 
 function clipLengthLabel(startedAt: string, endedAt: string): string {

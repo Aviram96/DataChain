@@ -1,8 +1,8 @@
 import { ui } from "@/lib/ui";
-import { polygonscanTxUrl } from "@/lib/verify-config";
+import { isLocalDevChain, polygonscanTxUrl } from "@/lib/verify-config";
 import {
   countByStatus,
-  formatLocalWindow,
+  formatVerifySlot,
   verifyStatusLabel,
   type VerifyReport,
   type VerifyStatus,
@@ -14,6 +14,9 @@ type RecordingVerifyPanelProps = {
 
 export function RecordingVerifyPanel({ report }: RecordingVerifyPanelProps) {
   const counts = countByStatus(report.results);
+  const localChain =
+    isLocalDevChain() &&
+    report.results.some((result) => result.record?.tx_hash);
 
   return (
     <div className={ui.panel}>
@@ -27,6 +30,12 @@ export function RecordingVerifyPanel({ report }: RecordingVerifyPanelProps) {
           Only the chosen part of the selected range was checked.
         </p>
       ) : null}
+      {localChain ? (
+        <p className={`mt-1 ${ui.hint}`}>
+          These proofs are on the chain running on this PC. Polygonscan does
+          not list them.
+        </p>
+      ) : null}
       <p className={`mt-1 ${ui.hint}`}>
         {report.results.length} minute
         {report.results.length === 1 ? "" : "s"} checked
@@ -34,9 +43,6 @@ export function RecordingVerifyPanel({ report }: RecordingVerifyPanelProps) {
       </p>
       <ul className="mt-4 space-y-2">
         {report.results.map((result) => {
-          const txUrl = result.record?.tx_hash
-            ? polygonscanTxUrl(result.record.tx_hash)
-            : null;
           return (
             <li
               key={`${result.slotIso}-${result.record?.id ?? "gap"}`}
@@ -45,26 +51,64 @@ export function RecordingVerifyPanel({ report }: RecordingVerifyPanelProps) {
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0 space-y-1">
                   <p className="text-sm font-medium text-landing-ink">
-                    {formatLocalWindow(result.slotIso, result.record?.ended_at)}
+                    {formatVerifySlot(result.slotIso, result.record?.ended_at)}
                   </p>
                   <p className={ui.hint}>{result.detail}</p>
                 </div>
                 <VerifyBadge status={result.status} />
               </div>
-              {txUrl ? (
-                <a
-                  href={txUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={`mt-2 inline-block ${ui.link} text-xs`}
-                >
-                  View on Polygonscan
-                </a>
+              {result.record?.tx_hash ? (
+                <div className="mt-2">
+                  <ChainTransaction txHash={result.record.tx_hash} compact />
+                </div>
               ) : null}
             </li>
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+export function ChainTransaction({
+  txHash,
+  compact = false,
+}: {
+  txHash: string | null;
+  compact?: boolean;
+}) {
+  const hash = txHash?.trim() ?? "";
+  if (!hash) {
+    if (compact) {
+      return null;
+    }
+    return <p className={ui.muted}>No transaction saved for this clip.</p>;
+  }
+
+  const localChain = isLocalDevChain();
+  const txUrl = localChain ? null : polygonscanTxUrl(hash);
+
+  return (
+    <div className="space-y-1">
+      <p className="break-all font-mono text-xs leading-relaxed text-landing-ink/85">
+        {hash}
+      </p>
+      {localChain && !compact ? (
+        <p className={ui.hint}>
+          This proof is on the chain running on this PC. Polygonscan does not
+          list it.
+        </p>
+      ) : null}
+      {txUrl ? (
+        <a
+          href={txUrl}
+          target="_blank"
+          rel="noreferrer"
+          className={`${ui.link} text-xs`}
+        >
+          View on Polygonscan
+        </a>
+      ) : null}
     </div>
   );
 }

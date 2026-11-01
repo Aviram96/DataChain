@@ -10,6 +10,7 @@ from app.services.video_chunker import (
     VideoChunkerConfig,
     VideoChunkerError,
     build_ffmpeg_chunk_command,
+    ffmpeg_subprocess_env,
     ensure_temp_dir,
     ffmpeg_input,
     list_chunk_files,
@@ -103,6 +104,25 @@ def test_build_ffmpeg_chunk_command_encodes_mjpeg(tmp_path: Path) -> None:
     assert cmd[cmd.index("-c:v") + 1] == "libx264"
     assert cmd[cmd.index("-use_wallclock_as_timestamps") + 1] == "1"
     assert cmd.index("-use_wallclock_as_timestamps") < cmd.index("-i")
+
+
+def test_strftime_segments_use_utc_clock(tmp_path: Path) -> None:
+    config = VideoChunkerConfig(
+        source_path=tmp_path / "cam.mp4",
+        temp_dir=tmp_path / "temp",
+        strftime_output=True,
+    )
+    env = ffmpeg_subprocess_env(config)
+    assert env is not None
+    assert env["TZ"] == "UTC"
+
+
+def test_plain_chunks_keep_the_process_environment(tmp_path: Path) -> None:
+    config = VideoChunkerConfig(
+        source_path=tmp_path / "cam.mp4",
+        temp_dir=tmp_path / "temp",
+    )
+    assert ffmpeg_subprocess_env(config) is None
 
 
 def test_build_ffmpeg_chunk_command_strftime(tmp_path: Path) -> None:

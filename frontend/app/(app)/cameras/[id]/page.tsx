@@ -35,6 +35,7 @@ function CameraDetailContent() {
   const [loading, setLoading] = useState(true);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [liveFailed, setLiveFailed] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,6 +57,10 @@ function CameraDetailContent() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setLiveFailed(false);
+  }, [camera?.stream_url]);
 
   async function handleDelete() {
     setDeleting(true);
@@ -92,8 +97,14 @@ function CameraDetailContent() {
   const online = camera.status === "online";
   const ingestFailed = ingestFailedMessage(camera);
 
+  const feedKind = liveFeedKind(camera.stream_url);
+  const details = [
+    camera.location?.trim(),
+    `Added ${new Date(camera.created_at).toLocaleString()}`,
+  ].filter((part): part is string => Boolean(part));
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div>
         <Link href="/cameras" className={ui.backLink}>
           ← Cameras
@@ -101,6 +112,7 @@ function CameraDetailContent() {
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-2">
             <h1 className={ui.pageTitle}>{camera.name}</h1>
+            <p className={ui.pageSubtitle}>{details.join(" · ")}</p>
             <span className={online ? ui.badgeOnline : ui.badgeOffline}>
               {online ? "Online" : "Offline"}
             </span>
@@ -150,51 +162,45 @@ function CameraDetailContent() {
         </div>
       ) : null}
 
-      {liveFeedKind(camera.stream_url) ? (
-        <div className={ui.panel}>
-          <h2 className={ui.sectionTitle}>Live feed</h2>
-          <p className={`mt-1 ${ui.hint}`}>
-            Picture from the camera. Ingest turns it into one-minute recordings
-            while it is running.
+      <section className={ui.panel} aria-labelledby="live-picture-heading">
+        <h2 id="live-picture-heading" className={ui.sectionTitle}>
+          Live
+        </h2>
+        <p className={`mt-1 ${ui.muted}`}>What this camera sees right now.</p>
+        {feedKind === "mjpeg" && !liveFailed ? (
+          <img
+            key={camera.stream_url}
+            src={camera.stream_url}
+            alt="Live camera"
+            onError={() => setLiveFailed(true)}
+            className="mt-3 h-72 w-full rounded-md bg-landing-ink object-contain"
+          />
+        ) : null}
+        {feedKind === "video" && !liveFailed ? (
+          <video
+            key={camera.stream_url}
+            src={camera.stream_url}
+            controls
+            autoPlay
+            muted
+            loop
+            playsInline
+            onError={() => setLiveFailed(true)}
+            className="mt-3 h-72 w-full rounded-md bg-landing-ink object-contain"
+          />
+        ) : null}
+        {feedKind && liveFailed ? (
+          <p className={`mt-3 ${ui.muted}`}>
+            The live picture did not load. Saved clips are still listed below.
           </p>
-          {liveFeedKind(camera.stream_url) === "mjpeg" ? (
-            <img
-              key={camera.stream_url}
-              src={camera.stream_url}
-              alt="Live camera"
-              className="mt-3 w-full rounded-md bg-landing-ink"
-            />
-          ) : (
-            <video
-              key={camera.stream_url}
-              src={camera.stream_url}
-              controls
-              autoPlay
-              muted
-              loop
-              playsInline
-              className="mt-3 w-full rounded-md bg-landing-ink"
-            />
-          )}
-        </div>
-      ) : null}
-
-      <dl className={`space-y-3 text-sm ${ui.panel}`}>
-        <div>
-          <dt className={ui.hint}>Stream URL</dt>
-          <dd className="break-all text-landing-ink/85">{camera.stream_url}</dd>
-        </div>
-        <div>
-          <dt className={ui.hint}>Location</dt>
-          <dd className="text-landing-ink/85">{camera.location || "—"}</dd>
-        </div>
-        <div>
-          <dt className={ui.hint}>Added</dt>
-          <dd className="text-landing-ink/85">
-            {new Date(camera.created_at).toLocaleString()}
-          </dd>
-        </div>
-      </dl>
+        ) : null}
+        {!feedKind ? (
+          <p className={`mt-3 ${ui.muted}`}>
+            This stream cannot be shown in the browser. Saved clips are below.
+          </p>
+        ) : null}
+        <p className={`mt-3 break-all ${ui.hint}`}>{camera.stream_url}</p>
+      </section>
 
       <CameraRecordings cameraId={camera.id} />
     </div>

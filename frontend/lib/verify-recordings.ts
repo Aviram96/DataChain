@@ -95,6 +95,37 @@ export function findRecordForSlot(
   });
 }
 
+/**
+ * A clip that started in an earlier minute can still cover this clock minute
+ * inside the checked range. That time belongs to the earlier clip.
+ */
+export function minuteAlreadyCovered(
+  records: VideoRecordPublic[],
+  slot: Date,
+  range: TimeWindow
+): boolean {
+  const slotStart = slot.getTime();
+  const slotEnd = slotStart + SEGMENT_MS;
+  const rangeStart = Date.parse(range.startedAt);
+  const rangeEnd = Date.parse(range.endedAt);
+  const from = Math.max(slotStart, rangeStart);
+  const to = Math.min(slotEnd, rangeEnd);
+  if (!(to > from)) {
+    return false;
+  }
+  return records.some((record) => {
+    const started = Date.parse(record.started_at);
+    const ended = Date.parse(record.ended_at);
+    if (!Number.isFinite(started) || !Number.isFinite(ended)) {
+      return false;
+    }
+    if (started >= slotStart && started < slotEnd) {
+      return false;
+    }
+    return started <= from && ended >= to;
+  });
+}
+
 export function unixSeconds(iso: string): bigint {
   return BigInt(Math.floor(Date.parse(iso) / 1000));
 }
@@ -181,6 +212,20 @@ export function verifyStatusLabel(status: VerifyStatus): string {
   }
 }
 
+/** One sentence for the clip on screen. */
+export function verifyStatusMeaning(status: VerifyStatus): string {
+  switch (status) {
+    case "verified":
+      return "This clip matches the proof stored on the chain.";
+    case "tampered":
+      return "This clip does not match the proof stored on the chain.";
+    case "missing":
+      return "No saved clip begins in this clock minute.";
+    case "failed_to_verify":
+      return "The chain could not be read, so this clip was not checked.";
+  }
+}
+
 export function countByStatus(
   results: VerifyMinuteResult[]
 ): Record<VerifyStatus, number> {
@@ -258,4 +303,16 @@ export function formatLocalWindow(startedAt: string, endedAt?: string): string {
       ? end.toLocaleTimeString(undefined, localTime)
       : end.toLocaleString(undefined, localDateTime);
   return `${startText} – ${endText}`;
+}
+
+/** Clock minute for a gap, or the saved window when a clip is attached. */
+export function formatVerifySlot(slotIso: string, endedAt?: string): string {
+  if (endedAt) {
+    return formatLocalWindow(slotIso, endedAt);
+  }
+  const endMs = Date.parse(slotIso) + SEGMENT_MS;
+  if (!Number.isFinite(endMs)) {
+    return formatLocalWindow(slotIso);
+  }
+  return formatLocalWindow(slotIso, new Date(endMs).toISOString());
 }
