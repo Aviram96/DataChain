@@ -19,6 +19,7 @@ from app.services.segment_identity import (
     SegmentIdentityError,
     parse_segment_path,
 )
+from app.services.segment_timeline import SegmentTimelinePermanentError
 
 DEFAULT_FFPROBE = "ffprobe"
 _HASH_CHUNK_SIZE = 1024 * 1024
@@ -186,6 +187,73 @@ def probe_video_duration_seconds(
         )
 
     return duration
+
+
+def probe_video_timing(
+    path: Path,
+    *,
+    ffprobe_executable: str = DEFAULT_FFPROBE,
+) -> tuple[float, float]:
+    """Return container ``start_time`` and ``duration`` in seconds.
+
+    Both values are required to map a segment onto the FFmpeg timeline.
+    A probe that runs but omits either value will not succeed later, so
+    that result is a permanent timeline error.
+    """
+    cmd = [
+        ffprobe_executable,
+        "-v",
+        "error",
+        "-show_entries",
+        "format=start_time,duration",
+        "-of",
+        "default=noprint_wrappers=1",
+        str(path),
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise SegmentIntegrityError(
+            "Could not determine video timing."
+        ) from exc
+    if completed.returncode != 0:
+        raise SegmentIntegrityError("Could not determine video timing.")
+
+    values: dict[str, str] = {}
+    for line in completed.stdout.splitlines():
+        if "=" not in line:
+            continue
+        key, raw = line.split("=", 1)
+        values[key.strip()] = raw.strip()
+
+    start_raw = values.get("start_time", "")
+    duration_raw = values.get("duration", "")
+    if start_raw in ("", "N/A") or duration_raw in ("", "N/A"):
+        raise SegmentTimelinePermanentError(
+            "ffprobe did not return a start time and duration"
+        )
+    try:
+        start_time = float(start_raw)
+        duration = float(duration_raw)
+    except ValueError as exc:
+        raise SegmentTimelinePermanentError(
+            "Invalid video timing returned by ffprobe."
+        ) from exc
+    if (
+        start_time < 0
+        or start_time == float("inf")
+        or not (0 < duration < float("inf"))
+    ):
+        raise SegmentTimelinePermanentError(
+            "Invalid video timing returned by ffprobe."
+        )
+    return start_time, duration
 
 
 def check_segment(

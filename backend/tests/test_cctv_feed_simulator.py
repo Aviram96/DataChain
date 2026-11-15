@@ -22,8 +22,7 @@ def test_build_ffmpeg_loop_command() -> None:
     assert "-stream_loop" in cmd
     assert cmd[cmd.index("-stream_loop") + 1] == "-1"
     assert str(config.source_path) in cmd
-    assert cmd[-2:] == ["-f", "mpegts"]
-    assert cmd[-1] == "pipe:1"
+    assert cmd[-3:] == ["-f", "mpegts", "pipe:1"]
 
 
 def test_validate_source_mp4_rejects_missing(tmp_path: Path) -> None:

@@ -9,7 +9,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from app.services.ingest_segment_processor import IngestPermanentError
 from app.services.segment_integrity import SegmentIntegrityResult
+from app.services.segment_timeline import (
+    SegmentTimelineNotReady,
+    SegmentTimelinePermanentError,
+)
 from app.services.temp_chunk_cleanup import (
     TempChunkCleanupError,
     delete_after_successful_processing,
@@ -56,6 +61,7 @@ class ChunkProcessingWorker:
         self._thread: threading.Thread | None = None
         self._handled: set[Path] = set()
         self._awaiting_retry: set[Path] = set()
+        self._permanent_failure: set[Path] = set()
         self._lock = threading.Lock()
 
     def start(self) -> None:
@@ -106,8 +112,12 @@ class ChunkProcessingWorker:
 
         for path in chunks:
             with self._lock:
-                if path in self._handled:
+                if path in self._handled or path in self._permanent_failure:
                     continue
+            if _timeline_invalid_marker(path).is_file():
+                with self._lock:
+                    self._permanent_failure.add(path)
+                continue
 
             if not final_pass and not _is_file_stable(
                 path,
@@ -129,17 +139,16 @@ class ChunkProcessingWorker:
                     result.sha256,
                     result.size_bytes,
                 )
-            if not self._config.processor(path):
-                with self._lock:
-                    first_retry = path not in self._awaiting_retry
-                    self._awaiting_retry.add(path)
-                if first_retry:
-                    logger.warning(
-                        "Processing did not succeed; keeping %s for retry",
-                        path.name,
-                    )
-                else:
-                    logger.debug("Retrying staged segment %s", path.name)
+            try:
+                processed = self._config.processor(path)
+            except SegmentTimelineNotReady:
+                self._note_retry(path, timeline_not_ready=True)
+                continue
+            except (SegmentTimelinePermanentError, IngestPermanentError) as exc:
+                self._keep_permanent_failure(path, exc)
+                continue
+            if not processed:
+                self._note_retry(path, timeline_not_ready=False)
                 continue
             if self._config.delete_on_success:
                 try:
@@ -156,6 +165,48 @@ class ChunkProcessingWorker:
                 self._handled.add(path)
                 self._awaiting_retry.discard(path)
         return deleted
+
+    def _note_retry(self, path: Path, *, timeline_not_ready: bool) -> None:
+        with self._lock:
+            first_retry = path not in self._awaiting_retry
+            self._awaiting_retry.add(path)
+        if not first_retry:
+            logger.debug("Retrying staged segment %s", path.name)
+            return
+        if timeline_not_ready:
+            logger.info(
+                "Segment timeline is not ready; keeping %s for retry",
+                path.name,
+            )
+            return
+        logger.warning(
+            "Processing did not succeed; keeping %s for retry",
+            path.name,
+        )
+
+    def _keep_permanent_failure(self, path: Path, exc: Exception) -> None:
+        """Keep the segment, log once, and do not process it again."""
+        marker = _timeline_invalid_marker(path)
+        if not marker.is_file():
+            try:
+                marker.write_text(f"{exc}\n", encoding="utf-8")
+            except OSError:
+                logger.error(
+                    "Cannot record permanent timeline failure for %s",
+                    path.name,
+                )
+            logger.error(
+                "Permanent timeline failure for %s: %s",
+                path.name,
+                exc,
+            )
+        with self._lock:
+            self._permanent_failure.add(path)
+            self._awaiting_retry.discard(path)
+
+
+def _timeline_invalid_marker(path: Path) -> Path:
+    return path.with_name(f"{path.name}.invalid")
 
 
 def _is_file_stable(path: Path, delay_seconds: float) -> bool:

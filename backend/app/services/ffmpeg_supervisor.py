@@ -19,6 +19,8 @@ ENV_MAX_RESTARTS = "CCTV_FFMPEG_MAX_RESTARTS"
 DEFAULT_RESTART_DELAY_SECONDS = 2.0
 
 CommandBuilder = Callable[[], list[str]]
+ProcessStartHook = Callable[[int], None]
+ProcessExitHook = Callable[[int], None]
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,8 @@ class FFmpegRunConfig:
     log_label: str | None = None
     popen_kwargs: dict[str, Any] = field(default_factory=dict)
     graceful_stop: bool = False
+    on_process_start: ProcessStartHook | None = None
+    on_process_exit: ProcessExitHook | None = None
 
 
 def resolve_restart_delay_seconds() -> float:
@@ -64,6 +68,8 @@ class FFmpegSupervisor:
         self._stopped = False
         self._restart_count = 0
         self._gave_up_after_restarts = False
+        self._exit_notified = False
+        self._exit_lock = threading.Lock()
 
     @property
     def restart_count(self) -> int:
@@ -93,17 +99,18 @@ class FFmpegSupervisor:
             try:
                 proc.stdin.write(b"q\n")
                 proc.stdin.flush()
-                proc.wait(timeout=5)
+                self._notify_process_exit(proc.wait(timeout=5))
                 return
             except (OSError, ValueError, subprocess.TimeoutExpired):
                 logger.warning("Graceful FFmpeg stop failed; using fallback")
 
         proc.terminate()
         try:
-            proc.wait(timeout=5)
+            code = proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
-            proc.wait(timeout=5)
+            code = proc.wait(timeout=5)
+        self._notify_process_exit(code)
 
 
     def run_until_signal(self) -> int:
@@ -137,6 +144,8 @@ class FFmpegSupervisor:
         last_code = 0
         try:
             while not self._stopped:
+                with self._exit_lock:
+                    self._exit_notified = False
                 cmd = self._config.build_command()
                 popen_kwargs = dict(self._config.popen_kwargs)
 
@@ -148,6 +157,7 @@ class FFmpegSupervisor:
                     stderr=subprocess.PIPE,
                     **popen_kwargs,
                 )
+                self._notify_process_start()
 
                 stderr_thread = threading.Thread(
                     target=self._log_stderr,
@@ -187,6 +197,7 @@ class FFmpegSupervisor:
                             break
 
                 stderr_thread.join(timeout=5)
+                self._notify_process_exit(last_code)
 
                 if self._stopped:
                     break
@@ -223,6 +234,38 @@ class FFmpegSupervisor:
                     signal.signal(sig, handler)
                 except (ValueError, OSError):
                     pass
+
+    def _notify_process_start(self) -> None:
+        """Record the pid once the process exists and before it is waited on."""
+        hook = self._config.on_process_start
+        proc = self._process
+        if hook is None or proc is None:
+            return
+        pid = proc.pid
+        if not isinstance(pid, int) or pid <= 0:
+            logger.error(
+                "FFmpeg started without a usable pid%s",
+                self._label(),
+            )
+            return
+        try:
+            hook(pid)
+        except Exception:
+            logger.exception("FFmpeg process-start hook failed")
+
+    def _notify_process_exit(self, code: int) -> None:
+        """Run the exit hook once for the process that just finished."""
+        with self._exit_lock:
+            if self._exit_notified:
+                return
+            self._exit_notified = True
+        hook = self._config.on_process_exit
+        if hook is None:
+            return
+        try:
+            hook(int(code))
+        except Exception:
+            logger.exception("FFmpeg process-exit hook failed")
 
     @staticmethod
     def _log_stderr(proc: subprocess.Popen[bytes]) -> None:

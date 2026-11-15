@@ -81,6 +81,12 @@ def _segment(tmp_path: Path) -> Path:
     return path
 
 
+def _not_anchored(_camera_id: UUID, _started_at: datetime) -> object:
+    from app.services.chain_anchor import ChainAnchorError
+
+    raise ChainAnchorError("AnchorNotFound")
+
+
 def _as_utc(moment: datetime) -> datetime:
     if moment.tzinfo is None:
         return moment.replace(tzinfo=timezone.utc)
@@ -91,6 +97,9 @@ def test_ipfs_anchor_db_cid_and_tx_hash_match(
     tmp_path: Path, session_factory: sessionmaker, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     path = _segment(tmp_path)
+    csv_path = path.parent / "segments_run.csv"
+    csv_path.write_text(f"{path.name},0.000000,60.000000\n")
+    (path.parent / "segments_run.csv.closed").write_text("")
     digest = sha256_file(path)
     monkeypatch.setenv("PINATA_JWT", "test-jwt")
     seen: list[SegmentAnchorRequest] = []
@@ -105,8 +114,8 @@ def test_ipfs_anchor_db_cid_and_tx_hash_match(
 
 
     with patch(
-        "app.services.ingest_segment_processor.probe_video_duration_seconds",
-        return_value=60.0,
+        "app.services.ingest_segment_processor.probe_video_timing",
+        return_value=(0.0, 60.0),
     ), patch(
         "app.services.pinata_ipfs.requests.post",
         return_value=pinata,
@@ -119,6 +128,7 @@ def test_ipfs_anchor_db_cid_and_tx_hash_match(
             send_anchor=lambda req: anchor_segment(
                 req, send_once=send_once, max_attempts=1
             ),
+            read_anchor=_not_anchored,
         )
 
     assert ok is True

@@ -177,3 +177,18 @@ def test_probe_video_duration_seconds(tmp_path: Path) -> None:
         duration = probe_video_duration_seconds(path)
 
     assert duration == 17.28
+
+
+def test_probe_video_timing_reads_start_and_duration(tmp_path: Path) -> None:
+    from app.services.segment_integrity import probe_video_timing
+
+    path = tmp_path / "video.mp4"
+    path.write_bytes(b"test")
+    with patch("app.services.segment_integrity.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="start_time=3.080000\nduration=5.000000\n",
+        )
+        start_time, duration = probe_video_timing(path)
+    assert start_time == 3.08
+    assert duration == 5.0

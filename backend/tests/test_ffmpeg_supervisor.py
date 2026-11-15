@@ -228,6 +228,81 @@ def test_supervisor_timeout_after_signal() -> None:
     proc.terminate.assert_called_once()
     assert supervisor.restart_count == 0
 
+def test_exit_hook_runs_once_per_process_after_crash_and_restart() -> None:
+    crashed = MagicMock(
+        wait=MagicMock(return_value=1),
+        stderr=None,
+        poll=MagicMock(return_value=1),
+    )
+    clean = MagicMock(
+        wait=MagicMock(return_value=0),
+        stderr=None,
+        poll=MagicMock(return_value=0),
+    )
+    processes = [crashed, clean]
+    events: list[tuple[str, int | None]] = []
+    crashed.pid = 11
+    clean.pid = 22
+
+    def build_command() -> list[str]:
+        events.append(("build", None))
+        return ["ffmpeg", "-version"]
+
+    def on_start(pid: int) -> None:
+        events.append(("start", pid))
+
+    def on_exit(code: int) -> None:
+        events.append(("exit", code))
+
+    config = FFmpegRunConfig(
+        build_command=build_command,
+        restart_on_crash=True,
+        restart_delay_seconds=0,
+        on_process_start=on_start,
+        on_process_exit=on_exit,
+    )
+    supervisor = FFmpegSupervisor(config)
+
+    with patch(
+        "app.services.ffmpeg_supervisor.subprocess.Popen",
+        side_effect=processes,
+    ):
+        code = supervisor.run_until_signal()
+
+    assert code == 0
+    assert events == [
+        ("build", None),
+        ("start", 11),
+        ("exit", 1),
+        ("build", None),
+        ("start", 22),
+        ("exit", 0),
+    ]
+
+
+def test_exit_hook_failure_does_not_stop_the_supervisor() -> None:
+    proc = MagicMock(
+        wait=MagicMock(return_value=0),
+        stderr=None,
+        poll=MagicMock(return_value=0),
+    )
+
+    def on_exit(_code: int) -> None:
+        raise RuntimeError("marker disk full")
+
+    config = FFmpegRunConfig(
+        build_command=lambda: ["ffmpeg"],
+        on_process_exit=on_exit,
+    )
+    supervisor = FFmpegSupervisor(config)
+
+    with patch(
+        "app.services.ffmpeg_supervisor.subprocess.Popen",
+        return_value=proc,
+    ):
+        assert supervisor.run_until_signal() == 0
+
+
 def test_supervisor_reads_stderr_lines(caplog) -> None:
     import io
     import logging

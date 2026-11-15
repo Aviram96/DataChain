@@ -9,6 +9,10 @@ from app.services.chunk_processing_worker import (
     ChunkProcessingWorkerConfig,
 )
 from app.services.segment_integrity import SegmentIntegrityResult
+from app.services.segment_timeline import (
+    SegmentTimelineNotReady,
+    SegmentTimelinePermanentError,
+)
 
 
 def test_worker_deletes_on_success(tmp_path: Path) -> None:
@@ -158,3 +162,62 @@ def test_worker_skips_newest_segment_during_recording(tmp_path: Path) -> None:
     assert processed == [older]
     assert not older.exists()
     assert newest.exists()
+
+
+def test_worker_retries_until_timeline_is_ready(tmp_path: Path) -> None:
+    chunk = tmp_path / "chunk_000.mp4"
+    chunk.write_bytes(b"data")
+    calls = {"n": 0}
+
+    def processor(_path: Path) -> bool:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise SegmentTimelineNotReady("waiting for the second segment")
+        return True
+
+    worker = ChunkProcessingWorker(
+        ChunkProcessingWorkerConfig(
+            temp_dir=tmp_path,
+            stable_delay_seconds=0,
+            processor=processor,
+        ),
+    )
+    assert worker.process_all_blocking() == 0
+    assert chunk.exists()
+    assert worker.process_all_blocking() == 1
+    assert not chunk.exists()
+    assert calls["n"] == 2
+
+
+def test_worker_does_not_retry_a_permanent_timeline_failure(tmp_path: Path) -> None:
+    chunk = tmp_path / "chunk_000.mp4"
+    chunk.write_bytes(b"data")
+    calls = {"n": 0}
+
+    def processor(_path: Path) -> bool:
+        calls["n"] += 1
+        raise SegmentTimelinePermanentError("incomplete row")
+
+    worker = ChunkProcessingWorker(
+        ChunkProcessingWorkerConfig(
+            temp_dir=tmp_path,
+            stable_delay_seconds=0,
+            processor=processor,
+        ),
+    )
+    assert worker.process_all_blocking() == 0
+    assert chunk.exists()
+    assert (tmp_path / "chunk_000.mp4.invalid").is_file()
+    assert worker.process_all_blocking() == 0
+    assert chunk.exists()
+    assert calls["n"] == 1
+
+    restarted = ChunkProcessingWorker(
+        ChunkProcessingWorkerConfig(
+            temp_dir=tmp_path,
+            stable_delay_seconds=0,
+            processor=processor,
+        ),
+    )
+    assert restarted.process_all_blocking() == 0
+    assert calls["n"] == 1

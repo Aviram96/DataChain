@@ -28,10 +28,14 @@ from app.services.camera_ingest import (
     ingest_config_for_camera,
     ingest_configs_for_all_active,
     mark_ingest_offline,
+    read_run_pid,
+    recover_orphan_segment_runs,
     resolve_ingest_max_restarts,
+    write_run_pid,
 )
 from app.services.camera_stream import CameraNotFoundForStream, list_active_cameras
 from app.services.segment_identity import camera_segment_pattern
+from app.services.segment_timeline import is_segment_run_closed
 
 import app.models as _models  # noqa: F401
 
@@ -262,3 +266,130 @@ def test_ingest_clears_offline_when_ffmpeg_exits_cleanly(
     db_session.expire_all()
     db_session.refresh(live)
     assert live.ingest_offline_at is None
+    markers = list(camera_chunk_dir(live.id, tmp_path).glob("segments_*.csv.closed"))
+    assert len(markers) == 1
+
+
+def test_ingest_closes_each_restarted_run(
+    db_session: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _user, live, _http = _user_with_cameras(db_session)
+    monkeypatch.setenv("CCTV_FFMPEG_MAX_RESTARTS", "1")
+    monkeypatch.setenv("CCTV_FFMPEG_RESTART_DELAY_SECONDS", "0")
+    SessionLocal = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=db_session.get_bind(),
+    )
+    config = CameraIngestConfig(
+        camera_id=live.id,
+        stream_url=live.stream_url,
+        temp_dir=tmp_path,
+    )
+    crashing = MagicMock(
+        wait=MagicMock(return_value=1),
+        stderr=None,
+        poll=MagicMock(return_value=1),
+    )
+    ingest = CameraIngest(config, session_factory=SessionLocal)
+    with patch(
+        "app.services.ffmpeg_supervisor.subprocess.Popen",
+        return_value=crashing,
+    ):
+        assert ingest.run_until_signal() == 1
+    markers = list(camera_chunk_dir(live.id, tmp_path).glob("segments_*.csv.closed"))
+    assert len(markers) == 2
+
+
+def test_recovery_closes_only_a_recorded_dead_pid(tmp_path: Path) -> None:
+    gone = tmp_path / "segments_gone.csv"
+    live = tmp_path / "segments_live.csv"
+    unknown = tmp_path / "segments_unknown.csv"
+    untracked = tmp_path / "segments_untracked.csv"
+    already = tmp_path / "segments_done.csv"
+    for path in (gone, live, unknown, untracked, already):
+        path.write_text("a.mp4,0,1\n")
+    write_run_pid(gone, 101)
+    write_run_pid(live, 202)
+    write_run_pid(unknown, 303)
+    (tmp_path / "segments_done.csv.closed").write_text("")
+    (tmp_path / "segments_done.csv.pid").write_text("404\n")
+
+    def alive(pid: int) -> bool | None:
+        if pid == 101:
+            return False
+        if pid == 202:
+            return True
+        return None
+
+    closed = recover_orphan_segment_runs(tmp_path, pid_is_alive=alive)
+
+    assert closed == [gone]
+    assert is_segment_run_closed(gone)
+    assert not is_segment_run_closed(live)
+    assert not is_segment_run_closed(unknown)
+    assert not is_segment_run_closed(untracked)
+    assert is_segment_run_closed(already)
+
+
+def test_recovery_does_not_close_when_the_pid_returns(tmp_path: Path) -> None:
+    csv_path = tmp_path / "segments_race.csv"
+    csv_path.write_text("a.mp4,0,1\n")
+    write_run_pid(csv_path, 505)
+    answers = iter((False, True))
+
+    def alive(_pid: int) -> bool | None:
+        return next(answers)
+
+    assert recover_orphan_segment_runs(tmp_path, pid_is_alive=alive) == []
+    assert not is_segment_run_closed(csv_path)
+
+
+def test_corrupt_pid_file_is_not_treated_as_a_finished_run(tmp_path: Path) -> None:
+    csv_path = tmp_path / "segments_bad.csv"
+    csv_path.write_text("a.mp4,0,1\n")
+    (tmp_path / "segments_bad.csv.pid").write_text("not-a-pid\n")
+
+    assert read_run_pid(csv_path) is None
+    assert recover_orphan_segment_runs(tmp_path, pid_is_alive=lambda _pid: False) == []
+    assert not is_segment_run_closed(csv_path)
+
+
+def test_ingest_records_ffmpeg_pid_before_the_run_closes(
+    db_session: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _user, live, _http = _user_with_cameras(db_session)
+    monkeypatch.setenv("CCTV_FFMPEG_RESTART_DELAY_SECONDS", "0")
+    SessionLocal = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=db_session.get_bind(),
+    )
+    config = CameraIngestConfig(
+        camera_id=live.id,
+        stream_url=live.stream_url,
+        temp_dir=tmp_path,
+    )
+    proc = MagicMock(
+        wait=MagicMock(return_value=0),
+        stderr=None,
+        poll=MagicMock(return_value=0),
+        pid=5151,
+    )
+    ingest = CameraIngest(config, session_factory=SessionLocal)
+    with patch(
+        "app.services.ffmpeg_supervisor.subprocess.Popen",
+        return_value=proc,
+    ):
+        assert ingest.run_until_signal() == 0
+    staging = camera_chunk_dir(live.id, tmp_path)
+    pid_files = list(staging.glob("segments_*.csv.pid"))
+    markers = list(staging.glob("segments_*.csv.closed"))
+    assert len(pid_files) == 1
+    assert len(markers) == 1
+    assert pid_files[0].read_text(encoding="utf-8").strip() == "5151"
+    assert pid_files[0].name.replace(".pid", ".closed") == markers[0].name

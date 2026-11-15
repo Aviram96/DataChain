@@ -141,7 +141,7 @@ Keep the **Status** column in this table aligned with the repository as work lan
 
 **Exit criteria**: End-to-end path from chunk file → CID → tx → DB row; contract address and ABI versioned for frontend verification.
 
-**Progress note**: Ingest wires Pinata → `anchorSegment` → `video_records` (`ingest_segment_processor.py`) as of 2026-09-15. **US-6.6** live Amoy deploy is maintainer-run (proven). **CP-D.P1–P9** Implemented (P9 is a mocked CID → tx → DB integration test).
+**Progress note**: Ingest wires Pinata → `anchorSegment` → `video_records` (`ingest_segment_processor.py`) as of 2026-09-15. Segment windows now come from the FFmpeg timeline mapping (`resolve_segment_utc_window`) and the same instants are floored for the chain anchor. **US-6.6** live Amoy deploy is maintainer-run (proven). **CP-D.P1–P9** Implemented (P9 is a mocked CID → tx → DB integration test).
 
 ---
 

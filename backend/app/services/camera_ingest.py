@@ -12,13 +12,13 @@ cap is reached.
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 from uuid import UUID, uuid4
-import os
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -41,6 +41,10 @@ from app.services.chunk_processing_worker import (
     ChunkProcessingWorkerConfig,
 )
 from app.services.segment_identity import camera_segment_pattern
+from app.services.segment_timeline import (
+    is_segment_run_closed,
+    mark_segment_run_closed,
+)
 from app.services.segment_integrity import (
     SegmentIntegrityResult,
     check_segment,
@@ -154,6 +158,94 @@ def chunker_config_for_ingest(config: CameraIngestConfig) -> VideoChunkerConfig:
         strftime_output=True,
         loop_source=config.loop_source,
     )
+
+
+def run_pid_path(csv_path: Path) -> Path:
+    """Sidecar recording the FFmpeg pid that owns this run's CSV."""
+    return csv_path.with_name(f"{csv_path.name}.pid")
+
+
+def write_run_pid(csv_path: Path, pid: int) -> None:
+    """Record the pid after that FFmpeg process has been created."""
+    if pid <= 0:
+        raise ValueError("FFmpeg pid must be positive")
+    target = run_pid_path(csv_path)
+    temporary = target.with_name(f"{target.name}.tmp")
+    temporary.write_text(f"{pid}\n", encoding="utf-8")
+    os.replace(temporary, target)
+
+
+def read_run_pid(csv_path: Path) -> int | None:
+    """Return the recorded pid, or None when it is missing or unreadable."""
+    try:
+        text = run_pid_path(csv_path).read_text(encoding="utf-8").strip()
+        pid = int(text)
+    except (OSError, ValueError):
+        return None
+    if pid <= 0:
+        return None
+    return pid
+
+
+def ffmpeg_pid_is_alive(pid: int) -> bool | None:
+    """Whether ``pid`` is still in the process table.
+
+    ``True`` means it is present, including a zombie that has not been reaped.
+    ``False`` means it is gone. ``None`` means the check could not tell, so
+    the caller must not treat the run as finished.
+    """
+    if pid <= 0:
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return None
+    return True
+
+
+def recover_orphan_segment_runs(
+    temp_dir: Path,
+    *,
+    pid_is_alive: Callable[[int], bool | None] | None = None,
+) -> list[Path]:
+    """Close a leftover run only when its recorded FFmpeg pid is gone.
+
+    A CSV with no pid file is left open. Absence from a process listing is
+    not evidence that the writer has exited. A live pid, a zombie, or an
+    inconclusive check also leaves the run open.
+    """
+    if not temp_dir.is_dir():
+        return []
+    alive = pid_is_alive if pid_is_alive is not None else ffmpeg_pid_is_alive
+    closed: list[Path] = []
+    for csv_path in sorted(temp_dir.glob("segments_*.csv")):
+        if is_segment_run_closed(csv_path):
+            continue
+        if not _recorded_ffmpeg_is_gone(csv_path, alive):
+            logger.info(
+                "Leaving %s unmarked; its FFmpeg process may still be writing",
+                csv_path.name,
+            )
+            continue
+        mark_segment_run_closed(csv_path)
+        closed.append(csv_path)
+        logger.info("Recovered closed marker for %s", csv_path.name)
+    return closed
+
+
+def _recorded_ffmpeg_is_gone(
+    csv_path: Path,
+    pid_is_alive: Callable[[int], bool | None],
+) -> bool:
+    """True only when the pid we stored is confirmed absent twice."""
+    pid = read_run_pid(csv_path)
+    if pid is None:
+        return False
+    if pid_is_alive(pid) is not False:
+        return False
+    return pid_is_alive(pid) is False
 
 
 def build_ffmpeg_receive_command(config: CameraIngestConfig) -> list[str]:
@@ -307,13 +399,16 @@ class CameraIngest:
             max_restarts,
         )
         self._with_session(lambda db: clear_ingest_offline(db, self._config.camera_id))
+        recover_orphan_segment_runs(chunk_config.temp_dir)
         ffmpeg_env = os.environ.copy()
         ffmpeg_env["TZ"] = "UTC"
+        active_csv: Path | None = None
 
         def build_command_for_run() -> list[str]:
+            nonlocal active_csv
             run_id = uuid4().hex
             run_started_at = datetime.now(timezone.utc)
-
+            active_csv = chunk_config.temp_dir / f"segments_{run_id}.csv"
             logger.info(
                 "FFmpeg run %s started at %s",
                 run_id,
@@ -321,9 +416,25 @@ class CameraIngest:
             )
             run_chunk_config = replace(
                 chunk_config,
-                segment_list_path=chunk_config.temp_dir / f"segments_{run_id}.csv",
+                segment_list_path=active_csv,
             )
             return build_ffmpeg_chunk_command(run_chunk_config)
+
+        def note_ffmpeg_started(pid: int) -> None:
+            if active_csv is None:
+                return
+            write_run_pid(active_csv, pid)
+            logger.info("FFmpeg pid %s owns %s", pid, active_csv.name)
+
+        def close_finished_run(code: int) -> None:
+            if active_csv is None:
+                return
+            mark_segment_run_closed(active_csv)
+            logger.info(
+                "FFmpeg run closed for %s (exit %s)",
+                active_csv.name,
+                code,
+            )
 
         run_config = FFmpegRunConfig(
             build_command=build_command_for_run,
@@ -333,6 +444,8 @@ class CameraIngest:
             log_label=f"camera {self._config.camera_id}",
             graceful_stop=True,
             popen_kwargs={"env": ffmpeg_env},
+            on_process_start=note_ffmpeg_started,
+            on_process_exit=close_finished_run,
         )
         self._supervisor = FFmpegSupervisor(run_config)
         worker = ChunkProcessingWorker(
