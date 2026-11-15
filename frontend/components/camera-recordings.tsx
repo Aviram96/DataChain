@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  FormEvent,
   useCallback,
   useEffect,
   useRef,
@@ -12,6 +11,11 @@ import {
 import { networkErrorMessage } from "@/lib/api";
 import { CamerasApiError } from "@/lib/cameras-api";
 import { ipfsGatewayUrl } from "@/lib/ipfs-gateway";
+import {
+  buildPlaybackSequence,
+  contiguousRecording,
+  type PlaybackSequence,
+} from "@/lib/playback-sequence";
 import {
   downloadRecordings,
   listAllRecordings,
@@ -41,6 +45,7 @@ import {
   RecordingVerifyPanel,
   VerifyBadge,
 } from "./recording-verify-panel";
+import { ContinuousPlayback } from "./continuous-playback";
 import { useToast } from "./toast-provider";
 import { VerificationHistory } from "./verification-history";
 
@@ -65,6 +70,11 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [watching, setWatching] = useState<VideoRecordPublic | null>(null);
+  const [dayRecords, setDayRecords] = useState<VideoRecordPublic[]>([]);
+  const [timesReady, setTimesReady] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [stretch, setStretch] = useState<PlaybackSequence | null>(null);
+  const [activeStretchId, setActiveStretchId] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [verifyReport, setVerifyReport] = useState<VerifyReport | null>(null);
@@ -125,71 +135,182 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   }, [load, page]);
 
   useEffect(() => {
-    if (!watching) {
+    const marker = watching?.id ?? stretch?.startedAt ?? null;
+    if (!marker) {
       scrolledForId.current = null;
       return;
     }
-    if (scrolledForId.current === watching.id) {
+    if (scrolledForId.current === marker) {
       return;
     }
-    scrolledForId.current = watching.id;
+    scrolledForId.current = marker;
     selectedRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [watching]);
+  }, [stretch, watching]);
 
   useEffect(() => {
     setVerifyReport(null);
     if (applied.startedAt && applied.endedAt) {
-      setPartialStart(isoToLocalTime(applied.startedAt));
-      setPartialEnd(
-        isoToLocalDate(applied.endedAt) === isoToLocalDate(applied.startedAt)
-          ? isoToLocalTime(applied.endedAt)
-          : "23:59"
-      );
+      setPartialStart(applied.startedAt);
+      setPartialEnd(applied.endedAt);
     } else {
       setPartialStart("");
       setPartialEnd("");
     }
   }, [applied, cameraId]);
 
-  function applySearch(event: FormEvent) {
-    event.preventDefault();
-    const window = rangeFromForm(dateInput, startInput, endInput);
-    if (window === "invalid") {
-      showToast("Choose a date, then an end time after the start time.", "error");
+  useEffect(() => {
+    if (!dateInput) {
+      setDayRecords([]);
+      setTimesReady(false);
       return;
     }
-    setPage(1);
-    setApplied(window);
-  }
+    const startedAt = localDateTimeToIso(dateInput, "00:00:00");
+    const next = new Date(`${dateInput}T00:00:00`);
+    if (!startedAt || Number.isNaN(next.getTime())) {
+      setDayRecords([]);
+      setTimesReady(true);
+      return;
+    }
+    next.setDate(next.getDate() + 1);
+    let cancelled = false;
+    setTimesReady(false);
+    listAllRecordings(cameraId, {
+      startedAt,
+      endedAt: next.toISOString(),
+    })
+      .then((records) => {
+        if (!cancelled) {
+          setDayRecords(records);
+        }
+      })
+      .catch((error) => {
+        if (cancelled) {
+          return;
+        }
+        setDayRecords([]);
+        if (error instanceof CamerasApiError) {
+          showToast(error.message, "error");
+        } else {
+          showToast(networkErrorMessage(), "error");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setTimesReady(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [cameraId, dateInput, showToast]);
 
   function clearSearch() {
     setDateInput("");
     setStartInput("");
     setEndInput("");
     setPage(1);
+    setStretch(null);
     setApplied({});
   }
 
-  function openWatch(record: VideoRecordPublic) {
-    const cid = record.ipfs_cid.trim();
-    if (!cid) {
-      showToast("This recording has no IPFS CID, so it cannot be played.", "error");
+  async function playContainingVideo(iso: string, endedAtLimit?: string) {
+    const day = dateInput || localDateKey(iso);
+    const dayStart = day ? localDateTimeToIso(day, "00:00:00") : null;
+    const dayEnd = day ? nextLocalMidnightIso(day) : null;
+    if (!iso || !dayStart || !dayEnd) {
+      showToast("Choose a saved time.", "error");
       return;
     }
-    playbackErrorFor.current = null;
-    setWatching(record);
+    setOpening(true);
+    try {
+      const records = await listAllRecordings(cameraId, {
+        startedAt: dayStart,
+        endedAt: dayEnd,
+      });
+      const span = contiguousRecording(records, iso);
+      if (!span) {
+        showToast("No saved clips cover that time.", "error");
+        return;
+      }
+      const limit = Date.parse(endedAtLimit ?? "");
+      const spanStart = Date.parse(span.startedAt);
+      const spanEnd = Date.parse(span.endedAt);
+      const windowEnd =
+        endedAtLimit &&
+        Number.isFinite(limit) &&
+        limit > spanStart &&
+        limit < spanEnd
+          ? endedAtLimit
+          : span.endedAt;
+      const sequence = buildPlaybackSequence(
+        records,
+        span.startedAt,
+        windowEnd,
+        iso
+      );
+      if (sequence.slices.length === 0) {
+        showToast("No saved clips cover that time.", "error");
+        return;
+      }
+      playbackErrorFor.current = null;
+      setWatching(null);
+      setStretch(sequence);
+      setPage(1);
+      setApplied({
+        startedAt: sequence.startedAt,
+        endedAt: sequence.endedAt,
+      });
+      setStartInput(iso);
+      setEndInput(windowEnd);
+      setDayRecords(records);
+      setTimesReady(true);
+      if (day !== dateInput) {
+        setDateInput(day);
+      }
+    } catch (error) {
+      if (error instanceof CamerasApiError) {
+        showToast(error.message, "error");
+      } else {
+        showToast(networkErrorMessage(), "error");
+      }
+    } finally {
+      setOpening(false);
+    }
+  }
+
+  function onDateChange(value: string) {
+    setDateInput(value);
+    setStartInput("");
+    setEndInput("");
+  }
+
+  function onStartChange(iso: string) {
+    if (!iso) {
+      setStartInput("");
+      setEndInput("");
+      return;
+    }
+    void playContainingVideo(iso);
+  }
+
+  function onEndChange(iso: string) {
+    if (startInput && iso) {
+      void playContainingVideo(startInput, iso);
+    }
   }
 
   function closeWatch() {
     setWatching(null);
+    setStretch(null);
     setMediaPlaying(false);
   }
 
   function handlePlaybackError() {
-    if (!watching || playbackErrorFor.current === watching.id) {
+    const marker = watching?.id ?? stretch?.startedAt ?? null;
+    if (!marker || playbackErrorFor.current === marker) {
       return;
     }
-    playbackErrorFor.current = watching.id;
+    playbackErrorFor.current = marker;
     showToast(
       "Could not play this recording from IPFS. Check the gateway URL or try again.",
       "error"
@@ -324,9 +445,8 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
       );
       return null;
     }
-    const date = isoToLocalDate(applied.startedAt);
-    const startedAt = localDateTimeToIso(date, partialStart);
-    const endedAt = localDateTimeToIso(date, partialEnd);
+    const startedAt = partialStart;
+    const endedAt = partialEnd;
     if (!startedAt || !endedAt || Date.parse(endedAt) <= Date.parse(startedAt)) {
       showToast("Choose an end time after the start time.", "error");
       return null;
@@ -359,7 +479,6 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
 
   function verifyOne(record: VideoRecordPublic) {
     playbackErrorFor.current = null;
-    setWatching(record);
     void runVerify(
       { startedAt: record.started_at, endedAt: record.ended_at },
       [record],
@@ -369,6 +488,10 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
 
   const onPlayingChange = useCallback((playing: boolean) => {
     setMediaPlaying(playing);
+  }, []);
+
+  const onActiveRecord = useCallback((recordId: string | null) => {
+    setActiveStretchId(recordId);
   }, []);
 
   async function runDownload(range: { startedAt: string; endedAt: string }) {
@@ -416,6 +539,23 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   }
 
   const busy = verifying || downloading;
+  const timeChoices = boundaryChoices(dayRecords);
+  const endChoices = timeChoices.filter(
+    (choice) => Date.parse(choice.iso) > Date.parse(startInput)
+  );
+  const partChoices = timeChoices.filter((choice) => {
+    if (!applied.startedAt || !applied.endedAt) {
+      return false;
+    }
+    const instant = Date.parse(choice.iso);
+    return (
+      instant >= Date.parse(applied.startedAt) &&
+      instant <= Date.parse(applied.endedAt)
+    );
+  });
+  const partEndChoices = partChoices.filter(
+    (choice) => Date.parse(choice.iso) > Date.parse(partialStart)
+  );
   const hasRange = Boolean(applied.startedAt || applied.endedAt);
   const emptyMessage = hasRange
     ? "No recordings match that date and time range."
@@ -435,40 +575,64 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
 
   return (
     <div className="space-y-8">
-      <SelectedRecording
-        sectionRef={selectedRef}
-        record={watching}
-        report={verifyReport}
-        checking={verifying && verifyTargetId === watching?.id}
-        downloading={downloading}
-        busy={busy}
-        onClose={closeWatch}
-        onVerify={() => {
-          if (watching) {
-            verifyOne(watching);
+      {stretch ? (
+        <ContinuousPlayback
+          sectionRef={selectedRef}
+          sequence={stretch}
+          downloading={downloading}
+          busy={busy || opening}
+          onClose={closeWatch}
+          onDownload={() =>
+            runDownload({
+              startedAt: stretch.startedAt,
+              endedAt: stretch.endedAt,
+            })
           }
-        }}
-        onDownload={() => {
-          if (watching) {
-            downloadOne(watching);
-          }
-        }}
-        onPlaybackError={handlePlaybackError}
-        onPlayingChange={onPlayingChange}
-      />
+          onPlaybackError={handlePlaybackError}
+          onPlayingChange={onPlayingChange}
+          onActiveRecord={onActiveRecord}
+        />
+      ) : (
+        <SelectedRecording
+          sectionRef={selectedRef}
+          record={watching}
+          report={verifyReport}
+          checking={verifying && verifyTargetId === watching?.id}
+          downloading={downloading}
+          busy={busy}
+          onClose={closeWatch}
+          onVerify={() => {
+            if (watching) {
+              verifyOne(watching);
+            }
+          }}
+          onDownload={() => {
+            if (watching) {
+              downloadOne(watching);
+            }
+          }}
+          onPlaybackError={handlePlaybackError}
+          onPlayingChange={onPlayingChange}
+        />
+      )}
 
       <section className="space-y-4">
       <div>
         <h2 className={`${ui.sectionTitle} text-left`}>Saved clips</h2>
         <p className={`mt-1 ${ui.pageSubtitle}`}>
           {hasRange
-            ? "Clips that overlap the date and time you chose."
-            : "The 10 newest one-minute clips. Search by date and time to narrow the list."}
+            ? "Clips inside the video you are watching."
+            : "Choose a saved time to play the whole video. Each row is one minute of that video."}
         </p>
       </div>
 
       <form
-        onSubmit={applySearch}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (startInput) {
+            void playContainingVideo(startInput, endInput || undefined);
+          }
+        }}
         className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end ${ui.panel}`}
       >
         <div className="flex flex-col gap-1.5">
@@ -479,53 +643,75 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
             id="recording-date"
             type="date"
             value={dateInput}
-            onChange={(event) => setDateInput(event.target.value)}
+            onChange={(event) => onDateChange(event.target.value)}
             className={ui.input}
           />
         </div>
         <div className="flex flex-col gap-1.5">
           <label htmlFor="recording-start" className={ui.hint}>
-            Start time
+            Time
           </label>
-          <input
+          <select
             id="recording-start"
-            type="time"
-            lang="en-GB"
             value={startInput}
-            onChange={(event) => setStartInput(event.target.value)}
-            className={ui.input}
-          />
+            onChange={(event) => onStartChange(event.target.value)}
+            disabled={!dateInput || !timesReady || timeChoices.length === 0}
+            className={`${ui.select} w-full`}
+          >
+            <option value="">
+              {!timesReady && dateInput ? "Loading saved times…" : "Choose a saved time"}
+            </option>
+            {timeChoices.slice(0, -1).map((choice) => (
+              <option key={choice.iso} value={choice.iso}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="flex flex-col gap-1.5">
           <label htmlFor="recording-end" className={ui.hint}>
             End time
           </label>
-          <input
+          <select
             id="recording-end"
-            type="time"
-            lang="en-GB"
             value={endInput}
-            onChange={(event) => setEndInput(event.target.value)}
-            className={ui.input}
-          />
+            onChange={(event) => onEndChange(event.target.value)}
+            disabled={!startInput || endChoices.length === 0}
+            className={`${ui.select} w-full`}
+          >
+            {!endInput ? <option value="">End of this video</option> : null}
+            {endChoices.map((choice) => (
+              <option key={choice.iso} value={choice.iso}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="submit" className={ui.btnPrimary}>
-            Search
+          <button
+            type="submit"
+            disabled={opening || !startInput}
+            className={ui.btnPrimary}
+          >
+            {opening ? "Opening…" : "Watch"}
           </button>
           <button type="button" onClick={clearSearch} className={ui.btnSecondary}>
             Clear
           </button>
         </div>
+        <p className={`sm:col-span-2 lg:col-span-4 ${ui.hint}`}>
+          {dateInput && timesReady && timeChoices.length === 0
+            ? "No saved clips on this date."
+            : "Choose a saved time to play the whole video. It starts there and continues through the last saved minute. Shorten the end time only if you want it to stop sooner."}
+        </p>
       </form>
 
-      {applied.startedAt && applied.endedAt ? (
+      {stretch ? (
         <div
           className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:items-end ${ui.panel}`}
         >
           <p className={`sm:col-span-2 lg:col-span-4 text-left ${ui.muted}`}>
-            Check or download this search, or only the part between the times
-            below.
+            Verify the whole video, or only the part between the times below.
           </p>
           <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-4">
             <button
@@ -534,7 +720,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
               onClick={verifyAppliedRange}
               className={ui.btnSecondary}
             >
-              {rangeVerifying ? "Verifying…" : "Verify search"}
+              {rangeVerifying ? "Verifying…" : "Verify whole video"}
             </button>
             <button
               type="button"
@@ -542,51 +728,68 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
               onClick={downloadAppliedRange}
               className={ui.btnSecondary}
             >
-              {downloading ? "Downloading…" : "Download search"}
+              {downloading ? "Downloading…" : "Download whole video"}
             </button>
           </div>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="verify-part-start" className={ui.hint}>
               Part start
             </label>
-            <input
+            <select
               id="verify-part-start"
-              type="time"
-              lang="en-GB"
               value={partialStart}
-              onChange={(event) => setPartialStart(event.target.value)}
-              className={ui.input}
-            />
+              onChange={(event) => {
+                const next = event.target.value;
+                setPartialStart(next);
+                if (Date.parse(partialEnd) <= Date.parse(next)) {
+                  const later = partChoices.filter(
+                    (choice) => Date.parse(choice.iso) > Date.parse(next)
+                  );
+                  setPartialEnd(later[later.length - 1]?.iso ?? "");
+                }
+              }}
+              className={`${ui.select} w-full`}
+            >
+              {partChoices.slice(0, -1).map((choice) => (
+                <option key={choice.iso} value={choice.iso}>
+                  {choice.label}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="flex flex-col gap-1.5">
             <label htmlFor="verify-part-end" className={ui.hint}>
               Part end
             </label>
-            <input
+            <select
               id="verify-part-end"
-              type="time"
-              lang="en-GB"
               value={partialEnd}
               onChange={(event) => setPartialEnd(event.target.value)}
-              className={ui.input}
-            />
+              className={`${ui.select} w-full`}
+            >
+              {partEndChoices.map((choice) => (
+                <option key={choice.iso} value={choice.iso}>
+                  {choice.label}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || !partialStart || !partialEnd}
               onClick={verifyPartialRange}
               className={ui.btnSecondary}
             >
-              {rangeVerifying ? "Verifying…" : "Verify part"}
+              {rangeVerifying ? "Verifying…" : "Verify this part"}
             </button>
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || !partialStart || !partialEnd}
               onClick={downloadPartialRange}
               className={ui.btnSecondary}
             >
-              {downloading ? "Downloading…" : "Download part"}
+              {downloading ? "Downloading…" : "Download this part"}
             </button>
           </div>
         </div>
@@ -604,7 +807,13 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
         <ul className="space-y-3" aria-label="Saved clips">
           {items.map((record) => {
             const rowStatus = statusForRecord(verifyReport, record.id);
-            const open = watching?.id === record.id;
+            const inStretch =
+              stretch?.slices.some((slice) => slice.record.id === record.id) ??
+              false;
+            const open = watching?.id === record.id || inStretch;
+            const playingRow =
+              mediaPlaying &&
+              (watching?.id === record.id || activeStretchId === record.id);
             return (
               <li
                 key={record.id}
@@ -622,7 +831,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
                     </p>
                     {open ? (
                       <span className="text-xs font-semibold text-landing-accent">
-                        {mediaPlaying ? "Playing" : "Selected"}
+                        {playingRow ? "Playing" : inStretch ? "In this video" : "Selected"}
                       </span>
                     ) : null}
                     {rowStatus ? <VerifyBadge status={rowStatus} /> : null}
@@ -631,7 +840,17 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => openWatch(record)}
+                    disabled={opening || !record.ipfs_cid.trim()}
+                    onClick={() => {
+                      if (!record.ipfs_cid.trim()) {
+                        showToast(
+                          "This recording has no IPFS CID, so it cannot be played.",
+                          "error"
+                        );
+                        return;
+                      }
+                      void playContainingVideo(record.started_at);
+                    }}
                     className={ui.btnCompact}
                   >
                     Watch
@@ -938,8 +1157,7 @@ function SelectedRecording({
         </div>
       ) : (
         <p className={`mt-2 ${ui.muted}`}>
-          No clip is open. Choose Watch on a saved minute below. The picture,
-          the time, and the proof for that minute show up here.
+          No video is open. Choose a saved time below to play the whole recording.
         </p>
       )}
     </section>
@@ -1043,32 +1261,49 @@ function clipLengthLabel(startedAt: string, endedAt: string): string {
   return `${seconds} sec`;
 }
 
-function rangeFromForm(
-  date: string,
-  start: string,
-  end: string
-): { startedAt?: string; endedAt?: string } | "invalid" {
-  const trimmedDate = date.trim();
-  if (!trimmedDate) {
-    return {};
-  }
-  const startTime = start.trim() || "00:00";
-  const startedAt = localDateTimeToIso(trimmedDate, startTime);
-  let endedAt: string | null;
-  if (end.trim()) {
-    endedAt = localDateTimeToIso(trimmedDate, end.trim());
-  } else {
-    const nextDay = new Date(`${trimmedDate}T00:00:00`);
-    if (Number.isNaN(nextDay.getTime())) {
-      return "invalid";
+function boundaryChoices(
+  records: VideoRecordPublic[]
+): { iso: string; label: string }[] {
+  const byInstant = new Map<number, string>();
+  for (const record of records) {
+    for (const iso of [record.started_at, record.ended_at]) {
+      const instant = Date.parse(iso);
+      if (Number.isFinite(instant) && !byInstant.has(instant)) {
+        byInstant.set(instant, iso);
+      }
     }
-    nextDay.setDate(nextDay.getDate() + 1);
-    endedAt = nextDay.toISOString();
   }
-  if (!startedAt || !endedAt || Date.parse(endedAt) <= Date.parse(startedAt)) {
-    return "invalid";
+  return [...byInstant.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, iso]) => ({ iso, label: formatLocalClock(iso) }));
+}
+
+function formatLocalClock(iso: string): string {
+  const parsed = new Date(iso);
+  const hours = String(parsed.getHours()).padStart(2, "0");
+  const minutes = String(parsed.getMinutes()).padStart(2, "0");
+  const seconds = String(parsed.getSeconds()).padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
+}
+
+function localDateKey(iso: string): string {
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
   }
-  return { startedAt, endedAt };
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function nextLocalMidnightIso(date: string): string | null {
+  const next = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(next.getTime())) {
+    return null;
+  }
+  next.setDate(next.getDate() + 1);
+  return next.toISOString();
 }
 
 function localDateTimeToIso(date: string, time: string): string | null {
@@ -1078,21 +1313,6 @@ function localDateTimeToIso(date: string, time: string): string | null {
     return null;
   }
   return parsed.toISOString();
-}
-
-function isoToLocalDate(iso: string): string {
-  const parsed = new Date(iso);
-  const year = parsed.getFullYear();
-  const month = String(parsed.getMonth() + 1).padStart(2, "0");
-  const day = String(parsed.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function isoToLocalTime(iso: string): string {
-  const parsed = new Date(iso);
-  const hours = String(parsed.getHours()).padStart(2, "0");
-  const minutes = String(parsed.getMinutes()).padStart(2, "0");
-  return `${hours}:${minutes}`;
 }
 
 function statusForRecord(report: VerifyReport | null, recordId: string) {
