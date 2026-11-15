@@ -6,6 +6,7 @@ import logging
 import os
 import signal
 import subprocess
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -30,6 +31,7 @@ class FFmpegRunConfig:
     max_restarts: int | None = None
     log_label: str | None = None
     popen_kwargs: dict[str, Any] = field(default_factory=dict)
+    graceful_stop: bool = False
 
 
 def resolve_restart_delay_seconds() -> float:
@@ -80,10 +82,22 @@ class FFmpegSupervisor:
     def stop(self) -> None:
         if self._stopped:
             return
+
         self._stopped = True
         proc = self._process
+
         if proc is None or proc.poll() is not None:
             return
+
+        if self._config.graceful_stop and proc.stdin is not None:
+            try:
+                proc.stdin.write(b"q\n")
+                proc.stdin.flush()
+                proc.wait(timeout=5)
+                return
+            except (OSError, ValueError, subprocess.TimeoutExpired):
+                logger.warning("Graceful FFmpeg stop failed; using fallback")
+
         proc.terminate()
         try:
             proc.wait(timeout=5)
@@ -91,13 +105,28 @@ class FFmpegSupervisor:
             proc.kill()
             proc.wait(timeout=5)
 
+
     def run_until_signal(self) -> int:
         """Run until stopped by signal or non-restartable FFmpeg exit."""
         previous_handlers: dict[int, Any] = {}
 
         def _handle_signal(signum: int, _frame: object | None) -> None:
             logger.info("Received signal %s; stopping FFmpeg supervisor", signum)
-            self.stop()
+            self._stopped = True
+
+            proc = self._process
+            if proc is None or proc.poll() is not None:
+                return
+
+            if self._config.graceful_stop and proc.stdin is not None:
+                try:
+                    proc.stdin.write(b"q\n")
+                    proc.stdin.flush()
+                    return
+                except (OSError, ValueError):
+                    logger.warning("Could not send q to FFmpeg; terminating")
+
+            proc.terminate()
 
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
@@ -109,13 +138,55 @@ class FFmpegSupervisor:
         try:
             while not self._stopped:
                 cmd = self._config.build_command()
+                popen_kwargs = dict(self._config.popen_kwargs)
+
+                if self._config.graceful_stop:
+                    popen_kwargs["stdin"] = subprocess.PIPE
+
                 self._process = subprocess.Popen(
                     cmd,
                     stderr=subprocess.PIPE,
-                    **self._config.popen_kwargs,
+                    **popen_kwargs,
                 )
-                last_code = self._process.wait()
-                self._log_stderr(self._process)
+
+                stderr_thread = threading.Thread(
+                    target=self._log_stderr,
+                    args=(self._process,),
+                    daemon=True,
+                )
+                stderr_thread.start()
+
+                stop_requested_at = None
+
+                while True:
+                    try:
+                        last_code = self._process.wait(timeout=0.5)
+                        break
+                    except subprocess.TimeoutExpired:
+                        if not self._stopped:
+                            continue
+
+                        if stop_requested_at is None:
+                            stop_requested_at = time.monotonic()
+
+                        if time.monotonic() - stop_requested_at >= 5:
+                            logger.warning(
+                                "FFmpeg did not stop gracefully; terminating process"
+                            )
+                            self._process.terminate()
+
+                            try:
+                                last_code = self._process.wait(timeout=5)
+                            except subprocess.TimeoutExpired:
+                                logger.error(
+                                    "FFmpeg did not terminate; killing process"
+                                )
+                                self._process.kill()
+                                last_code = self._process.wait(timeout=5)
+
+                            break
+
+                stderr_thread.join(timeout=5)
 
                 if self._stopped:
                     break
@@ -155,8 +226,10 @@ class FFmpegSupervisor:
 
     @staticmethod
     def _log_stderr(proc: subprocess.Popen[bytes]) -> None:
-        if not proc.stderr:
+        if proc.stderr is None:
             return
-        err = proc.stderr.read().decode("utf-8", errors="replace")
-        if err.strip():
-            logger.warning("FFmpeg stderr:\n%s", err.strip())
+
+        for raw_line in proc.stderr:
+            line = raw_line.decode("utf-8", errors="replace").strip()
+            if line:
+                logger.warning("FFmpeg stderr: %s", line)

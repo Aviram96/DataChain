@@ -39,6 +39,7 @@ class ChunkProcessingWorkerConfig:
     processor: ChunkProcessor = field(default=stub_chunk_processor)
     delete_on_success: bool = True
     integrity_check: IntegrityCheck | None = None
+    skip_newest_segment: bool = False
 
 
 class ChunkProcessingWorker:
@@ -95,10 +96,19 @@ class ChunkProcessingWorker:
         deleted = 0
         if not self._config.temp_dir.is_dir():
             return 0
-        for path in list_chunk_files(self._config.temp_dir, self._config.segment_pattern):
+        chunks = list_chunk_files(
+            self._config.temp_dir,
+            self._config.segment_pattern,
+        )
+
+        if self._config.skip_newest_segment and not final_pass and chunks:
+            chunks = chunks[:-1]
+
+        for path in chunks:
             with self._lock:
                 if path in self._handled:
                     continue
+
             if not final_pass and not _is_file_stable(
                 path,
                 self._config.stable_delay_seconds,
@@ -112,8 +122,6 @@ class ChunkProcessingWorker:
                         path.name,
                         result.error,
                     )
-                    with self._lock:
-                        self._handled.add(path)
                     continue
                 logger.info(
                     "Segment integrity ok %s sha256=%s bytes=%s",

@@ -49,6 +49,7 @@ class VideoChunkerConfig:
     extra_input_args: tuple[str, ...] = ()
     restart_on_crash: bool | None = None
     strftime_output: bool = False
+    segment_list_path: Path | None = None
 
 
 def resolve_temp_dir(cli_path: str | None = None) -> Path:
@@ -114,7 +115,10 @@ def output_codec_args(config: VideoChunkerConfig) -> list[str]:
             "veryfast",
             "-pix_fmt",
             "yuv420p",
+            "-force_key_frames",
+            f"expr:gte(t,n_forced*{config.segment_duration_seconds})",
         ]
+
     return ["-c", "copy"]
 
 
@@ -145,13 +149,24 @@ def build_ffmpeg_chunk_command(config: VideoChunkerConfig) -> list[str]:
             "mp4",
         ]
     )
+    if config.segment_list_path is not None:
+        cmd.extend(
+            [
+                "-segment_list",
+                str(config.segment_list_path),
+                "-segment_list_type",
+                "csv",
+            ]
+        )
     if config.strftime_output:
         cmd.extend(["-strftime", "1"])
     cmd.append(str(segment_output_path(config)))
     return cmd
 
 
-def list_chunk_files(temp_dir: Path, pattern: str = DEFAULT_SEGMENT_PATTERN) -> list[Path]:
+def list_chunk_files(
+    temp_dir: Path, pattern: str = DEFAULT_SEGMENT_PATTERN
+) -> list[Path]:
     """Return chunk files matching the segment naming pattern, sorted by name."""
     prefix = pattern.split("%")[0]
     suffix = ".mp4"
@@ -194,11 +209,14 @@ class VideoChunker:
             mode,
             restart_note,
         )
+        ffmpeg_env = os.environ.copy()
+        ffmpeg_env["TZ"] = "UTC"
         run_config = FFmpegRunConfig(
             build_command=lambda: build_ffmpeg_chunk_command(self._config),
             restart_on_crash=restart_on_crash,
             restart_delay_seconds=resolve_restart_delay_seconds(),
             max_restarts=resolve_max_restarts(),
+            popen_kwargs={"env": ffmpeg_env},
         )
         supervisor = FFmpegSupervisor(run_config)
         try:
@@ -209,9 +227,13 @@ class VideoChunker:
                 self._config.temp_dir,
                 self._config.segment_pattern,
             )
-            logger.info("Wrote %d chunk file(s) to %s", len(chunks), self._config.temp_dir)
+            logger.info(
+                "Wrote %d chunk file(s) to %s", len(chunks), self._config.temp_dir
+            )
             if supervisor.restart_count:
-                logger.info("FFmpeg restarted %s time(s) after crash", supervisor.restart_count)
+                logger.info(
+                    "FFmpeg restarted %s time(s) after crash", supervisor.restart_count
+                )
             return code
         finally:
             if worker is not None:

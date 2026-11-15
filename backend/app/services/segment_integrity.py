@@ -137,6 +137,57 @@ def file_has_video_stream(
     return "video" in completed.stdout.lower()
 
 
+def probe_video_duration_seconds(
+    path: Path,
+    *,
+    ffprobe_executable: str = DEFAULT_FFPROBE,
+) -> float:
+    """Return the duration of an MP4 file in seconds."""
+
+    cmd = [
+        ffprobe_executable,
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(path),
+    ]
+
+    try:
+        completed = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise SegmentIntegrityError(
+            "Could not determine video duration."
+        ) from exc
+
+    if completed.returncode != 0:
+        raise SegmentIntegrityError(
+            "Could not determine video duration."
+        )
+
+    try:
+        duration = float(completed.stdout.strip())
+    except ValueError as exc:
+        raise SegmentIntegrityError(
+            "Invalid video duration returned by ffprobe."
+        ) from exc
+
+    if not (0 < duration < float("inf")):
+        raise SegmentIntegrityError(
+            "Invalid video duration returned by ffprobe."
+        )
+
+    return duration
+
+
 def check_segment(
     path: Path,
     *,

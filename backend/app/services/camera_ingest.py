@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
+import os
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -148,6 +149,8 @@ def chunker_config_for_ingest(config: CameraIngestConfig) -> VideoChunkerConfig:
         extra_input_args=extra,
         restart_on_crash=True,
         segment_pattern=camera_segment_pattern(config.camera_id),
+        segment_list_path=camera_chunk_dir(config.camera_id, config.temp_dir)
+        / "segments.csv",
         strftime_output=True,
         loop_source=config.loop_source,
     )
@@ -192,6 +195,7 @@ def integrity_worker_config_for_ingest(
         processor=_process,
         delete_on_success=True,
         integrity_check=_check,
+        skip_newest_segment=True,
     )
 
 
@@ -302,15 +306,33 @@ class CameraIngest:
             chunk_config.temp_dir,
             max_restarts,
         )
-        self._with_session(
-            lambda db: clear_ingest_offline(db, self._config.camera_id)
-        )
+        self._with_session(lambda db: clear_ingest_offline(db, self._config.camera_id))
+        ffmpeg_env = os.environ.copy()
+        ffmpeg_env["TZ"] = "UTC"
+
+        def build_command_for_run() -> list[str]:
+            run_id = uuid4().hex
+            run_started_at = datetime.now(timezone.utc)
+
+            logger.info(
+                "FFmpeg run %s started at %s",
+                run_id,
+                run_started_at.isoformat(),
+            )
+            run_chunk_config = replace(
+                chunk_config,
+                segment_list_path=chunk_config.temp_dir / f"segments_{run_id}.csv",
+            )
+            return build_ffmpeg_chunk_command(run_chunk_config)
+
         run_config = FFmpegRunConfig(
-            build_command=lambda: build_ffmpeg_chunk_command(chunk_config),
+            build_command=build_command_for_run,
             restart_on_crash=True,
             restart_delay_seconds=resolve_restart_delay_seconds(),
             max_restarts=max_restarts,
             log_label=f"camera {self._config.camera_id}",
+            graceful_stop=True,
+            popen_kwargs={"env": ffmpeg_env},
         )
         self._supervisor = FFmpegSupervisor(run_config)
         worker = ChunkProcessingWorker(

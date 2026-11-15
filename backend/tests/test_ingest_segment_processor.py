@@ -5,6 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import UUID
 
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -86,13 +89,17 @@ def test_process_success_saves_row_and_can_delete(
     tmp_path: Path, session_factory: sessionmaker
 ) -> None:
     path = _segment(tmp_path)
-    ok = process_ingest_segment(
-        path,
-        duration_seconds=60,
-        session_factory=session_factory,
-        upload=lambda _p: CID,
-        send_anchor=lambda _req: TX,
-    )
+    with patch(
+        "app.services.ingest_segment_processor.probe_video_duration_seconds",
+        return_value=60.0,
+    ):
+        ok = process_ingest_segment(
+            path,
+            duration_seconds=60,
+            session_factory=session_factory,
+            upload=lambda _p: CID,
+            send_anchor=lambda _req: TX,
+        )
     assert ok is True
     db: Session = session_factory()
     try:
@@ -177,8 +184,15 @@ def test_ingest_worker_deletes_after_mocked_success(
         upload=lambda _p: CID,
         send_anchor=lambda _req: TX,
     )
+
     worker = ChunkProcessingWorker(worker_config)
-    assert worker.process_all_blocking() == 1
+
+    with patch(
+        "app.services.ingest_segment_processor.probe_video_duration_seconds",
+        return_value=60.0,
+    ):
+        assert worker.process_all_blocking() == 1
+
     assert not path.exists()
 
 
@@ -192,3 +206,76 @@ def test_ingest_worker_config_deletes_on_processor_success(tmp_path: Path) -> No
     assert worker_config.delete_on_success is True
     assert worker_config.processor is not keep_staged_until_processing_succeeds
     assert worker_config.segment_pattern == camera_segment_pattern(CAMERA_ID)
+
+
+def test_partial_segment_uses_actual_duration(
+    tmp_path: Path,
+    session_factory: sessionmaker,
+) -> None:
+    path = _segment(tmp_path)
+    anchored_requests: list[SegmentAnchorRequest] = []
+
+    def fake_anchor(request: SegmentAnchorRequest) -> str:
+        anchored_requests.append(request)
+        return TX
+
+    with patch(
+        "app.services.ingest_segment_processor.probe_video_duration_seconds",
+        return_value=53.88,
+        create=True,
+    ):
+        ok = process_ingest_segment(
+            path,
+            duration_seconds=60,
+            session_factory=session_factory,
+            upload=lambda _p: CID,
+            send_anchor=fake_anchor,
+        )
+
+    assert ok is True
+
+    expected_start = datetime(
+        2026, 8, 24, 12, 0, 0, tzinfo=timezone.utc
+    )
+    expected_end = expected_start + timedelta(seconds=54)
+
+    assert len(anchored_requests) == 1
+    assert anchored_requests[0].started_at == expected_start
+    assert anchored_requests[0].ended_at == expected_end
+
+
+    db = session_factory()
+    try:
+        row = db.query(VideoRecord).one()
+
+        assert row.started_at.replace(tzinfo=timezone.utc) == expected_start
+        assert row.ended_at.replace(tzinfo=timezone.utc) == expected_end
+    finally:
+        db.close()
+
+
+def test_segment_slightly_over_60_seconds_is_accepted(
+    tmp_path: Path,
+    session_factory: sessionmaker,
+) -> None:
+    path = _segment(tmp_path)
+    anchored_requests: list[SegmentAnchorRequest] = []
+
+    def fake_anchor(request: SegmentAnchorRequest) -> str:
+        anchored_requests.append(request)
+        return TX
+
+    with patch(
+        "app.services.ingest_segment_processor.probe_video_duration_seconds",
+        return_value=60.04,
+    ):
+        ok = process_ingest_segment(
+            path,
+            duration_seconds=60,
+            session_factory=session_factory,
+            upload=lambda _p: CID,
+            send_anchor=fake_anchor,
+        )
+
+    assert ok is True
+    assert len(anchored_requests) == 1

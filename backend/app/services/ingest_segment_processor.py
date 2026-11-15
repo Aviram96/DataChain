@@ -14,6 +14,9 @@ from datetime import datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import math
+from datetime import datetime, timedelta
+
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.video_record import VideoRecord
@@ -24,7 +27,11 @@ from app.services.chain_anchor import (
 )
 from app.services.pinata_ipfs import PinataUploadError, upload_segment
 from app.services.segment_identity import SegmentIdentityError, parse_segment_path
-from app.services.segment_integrity import sha256_file
+from app.services.segment_integrity import (
+    SegmentIntegrityError,
+    probe_video_duration_seconds,
+    sha256_file,
+)
 from app.services.video_chunker import DEFAULT_CHUNK_DURATION_SECONDS
 
 logger = logging.getLogger(__name__)
@@ -94,6 +101,28 @@ def process_ingest_segment(
         logger.error("Cannot process unnamed segment %s: %s", path.name, exc)
         return False
 
+
+    try:
+        media_duration = probe_video_duration_seconds(path)
+        rounded_duration = math.ceil(media_duration)
+
+        if media_duration > duration_seconds + 1.0:
+            raise SegmentIntegrityError(
+                "Segment duration exceeds allowed tolerance."
+    )
+
+        ended_at = identity.started_at + timedelta(
+            seconds=rounded_duration
+        )
+
+    except SegmentIntegrityError as exc:
+        logger.error(
+            "Cannot determine duration for %s: %s",
+            path.name,
+            exc,
+        )
+        return False
+
     try:
         digest = sha256_file(path)
     except OSError as exc:
@@ -114,7 +143,7 @@ def process_ingest_segment(
     request = SegmentAnchorRequest(
         camera_id=identity.camera_id,
         started_at=identity.started_at,
-        ended_at=identity.ended_at,
+        ended_at=ended_at,
         cid=cid,
         segment_hash=digest,
     )
@@ -145,7 +174,7 @@ def process_ingest_segment(
             db,
             camera_id=identity.camera_id,
             started_at=identity.started_at,
-            ended_at=identity.ended_at,
+            ended_at=ended_at,
             ipfs_cid=cid,
             segment_hash=digest,
             tx_hash=tx_hash,

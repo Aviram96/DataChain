@@ -103,7 +103,15 @@ def test_ipfs_anchor_db_cid_and_tx_hash_match(
     pinata.status_code = 200
     pinata.json.return_value = {"IpfsHash": CID}
 
-    with patch("app.services.pinata_ipfs.requests.post", return_value=pinata) as post:
+
+    with patch(
+        "app.services.ingest_segment_processor.probe_video_duration_seconds",
+        return_value=60.0,
+    ), patch(
+        "app.services.pinata_ipfs.requests.post",
+        return_value=pinata,
+    ) as post:
+
         ok = process_ingest_segment(
             path,
             duration_seconds=60,

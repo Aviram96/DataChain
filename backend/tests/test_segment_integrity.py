@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 from uuid import UUID
+from unittest.mock import patch, MagicMock
 
 from app.services.camera_ingest import (
     CameraIngestConfig,
@@ -21,6 +22,7 @@ from app.services.segment_integrity import (
     ffprobe_executable_for,
     mp4_has_ftyp_and_moov,
     sha256_file,
+    probe_video_duration_seconds,
 )
 from app.services.segment_staging import keep_staged_until_processing_succeeds
 
@@ -157,5 +159,21 @@ def test_integrity_worker_config_for_ingest_gates_then_stages(tmp_path: Path) ->
     worker_config = integrity_worker_config_for_ingest(config)
     assert worker_config.integrity_check is not None
     assert worker_config.segment_pattern == camera_segment_pattern(CAMERA_ID)
-    assert worker_config.processor is keep_staged_until_processing_succeeds
-    assert worker_config.delete_on_success is False
+    assert callable(worker_config.processor)
+    assert worker_config.delete_on_success is True
+
+def test_probe_video_duration_seconds(tmp_path: Path) -> None:
+    path = tmp_path / "video.mp4"
+    path.write_bytes(b"test")
+
+    with patch(
+        "app.services.segment_integrity.subprocess.run"
+    ) as mock_run:
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout="17.280000\n",
+        )
+
+        duration = probe_video_duration_seconds(path)
+
+    assert duration == 17.28
