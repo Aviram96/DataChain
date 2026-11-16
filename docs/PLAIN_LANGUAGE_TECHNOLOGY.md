@@ -248,7 +248,7 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** Chunks are **temporary staging** until IPFS and the chain record exist. Automatic cleanup keeps laptops and servers healthy during long-running CCTV ingest. Camera ingest (Slice C) keeps staged files in `temp/` until processing succeeds, then deletes them; failed files stay for retry. The Epic 5 file-chunk path still deletes on stub success.
 
-**Where it shows up:** `backend/app/services/chunk_processing_worker.py`, `backend/app/services/temp_chunk_cleanup.py` (`delete_after_successful_processing`), `backend/app/services/segment_staging.py` (ingest keep-until-success), `--cleanup-after-success` on `chunk_cctv_feed.py`, and `scripts/process_temp_chunks.py`. Slice D Pinata upload is `pinata_ipfs.py` (not yet the ingest processor).
+**Where it shows up:** `backend/app/services/chunk_processing_worker.py`, `backend/app/services/temp_chunk_cleanup.py` (`delete_after_successful_processing`), `backend/app/services/segment_staging.py` (ingest keep-until-success), `--cleanup-after-success` on `chunk_cctv_feed.py`, and `scripts/process_temp_chunks.py`. After a segment passes the integrity check, `ingest_segment_processor.py` uploads it through `pinata_ipfs.py`.
 
 ### Pinata (IPFS pinning)
 

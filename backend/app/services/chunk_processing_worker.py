@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from app.services.ingest_segment_processor import IngestPermanentError
-from app.services.segment_integrity import SegmentIntegrityResult
+from app.services.segment_integrity import INCOMPLETE_MP4_ERROR, SegmentIntegrityResult
 from app.services.segment_timeline import (
     SegmentTimelineNotReady,
     SegmentTimelinePermanentError,
@@ -53,6 +53,11 @@ class ChunkProcessingWorker:
     CP-C.P7: delete a temp file only after the processor returns True and
     ``delete_on_success`` is set. Processor failures leave the file in place
     for retry. Integrity failures stay in temp/ and are not handed on (CP-C.P5).
+
+    A normal MP4 gains its ``moov`` box only when FFmpeg closes the segment.
+    While ingest is running, a missing ``moov`` means the minute is still open,
+    so that file is checked again later. On shutdown, a file that is still
+    incomplete is a real integrity failure.
     """
 
     def __init__(self, config: ChunkProcessingWorkerConfig) -> None:
@@ -62,6 +67,7 @@ class ChunkProcessingWorker:
         self._handled: set[Path] = set()
         self._awaiting_retry: set[Path] = set()
         self._permanent_failure: set[Path] = set()
+        self._open_segment_notice: set[Path] = set()
         self._lock = threading.Lock()
 
     def start(self) -> None:
@@ -127,11 +133,18 @@ class ChunkProcessingWorker:
             if self._config.integrity_check is not None:
                 result = self._config.integrity_check(path)
                 if not result.ok:
+                    if not final_pass and result.error == INCOMPLETE_MP4_ERROR:
+                        self._note_open_segment(path)
+                        continue
                     logger.error(
                         "Segment integrity failed for %s: %s",
                         path.name,
                         result.error,
                     )
+                    with self._lock:
+                        self._open_segment_notice.discard(path)
+                        if final_pass and result.error == INCOMPLETE_MP4_ERROR:
+                            self._handled.add(path)
                     continue
                 logger.info(
                     "Segment integrity ok %s sha256=%s bytes=%s",
@@ -164,6 +177,7 @@ class ChunkProcessingWorker:
             with self._lock:
                 self._handled.add(path)
                 self._awaiting_retry.discard(path)
+                self._open_segment_notice.discard(path)
         return deleted
 
     def _note_retry(self, path: Path, *, timeline_not_ready: bool) -> None:
@@ -203,6 +217,18 @@ class ChunkProcessingWorker:
         with self._lock:
             self._permanent_failure.add(path)
             self._awaiting_retry.discard(path)
+            self._open_segment_notice.discard(path)
+
+    def _note_open_segment(self, path: Path) -> None:
+        """Remember a segment FFmpeg has not closed yet; log that once."""
+        with self._lock:
+            first_notice = path not in self._open_segment_notice
+            self._open_segment_notice.add(path)
+        if first_notice:
+            logger.info(
+                "Segment %s is still being written; waiting until it is complete",
+                path.name,
+            )
 
 
 def _timeline_invalid_marker(path: Path) -> Path:

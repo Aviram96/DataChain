@@ -1,4 +1,4 @@
-import type { VideoRecordPublic } from "./recordings-api";
+import type { PlaybackDenial, VideoRecordPublic } from "./recordings-api";
 
 export const SEGMENT_MS = 60_000;
 export const MAX_EXPECTED_MINUTES = 24 * 60;
@@ -102,6 +102,37 @@ export function findRecordForSlot(
   });
 }
 
+/**
+ * A clip that started in an earlier minute can still cover this clock minute
+ * inside the checked range. That time belongs to the earlier clip.
+ */
+export function minuteAlreadyCovered(
+  records: VideoRecordPublic[],
+  slot: Date,
+  range: TimeWindow
+): boolean {
+  const slotStart = slot.getTime();
+  const slotEnd = slotStart + SEGMENT_MS;
+  const rangeStart = Date.parse(range.startedAt);
+  const rangeEnd = Date.parse(range.endedAt);
+  const from = Math.max(slotStart, rangeStart);
+  const to = Math.min(slotEnd, rangeEnd);
+  if (!(to > from)) {
+    return false;
+  }
+  return records.some((record) => {
+    const started = Date.parse(record.started_at);
+    const ended = Date.parse(record.ended_at);
+    if (!Number.isFinite(started) || !Number.isFinite(ended)) {
+      return false;
+    }
+    if (started >= slotStart && started < slotEnd) {
+      return false;
+    }
+    return started <= from && ended >= to;
+  });
+}
+
 export function unixSeconds(iso: string): bigint {
   return BigInt(Math.floor(Date.parse(iso) / 1000));
 }
@@ -198,6 +229,77 @@ export function verifyStatusLabel(status: VerifyStatus): string {
   }
 }
 
+/** One sentence for the clip on screen. */
+export function verifyStatusMeaning(status: VerifyStatus): string {
+  switch (status) {
+    case "verified":
+      return "This clip matches the proof stored on the chain.";
+    case "tampered":
+      return "This clip does not match the proof stored on the chain.";
+    case "missing":
+      return "No saved clip begins in this clock minute.";
+    case "unavailable":
+      return "The video file could not be retrieved, so it was not played.";
+    case "failed":
+      return "Verification could not be completed, so this clip was not played.";
+    case "failed_to_verify":
+      return "The chain could not be read, so this clip was not checked.";
+  }
+}
+
+/** Map a backend playback denial onto the shared verification report. */
+export function reportFromPlaybackDenial(
+  denial: PlaybackDenial,
+  record: VideoRecordPublic
+): VerifyReport {
+  const segments: VerifyMinuteResult[] = denial.segments.map((segment) => ({
+    slotIso: segment.started_at,
+    endedAt: segment.ended_at,
+    status: segment.status,
+    detail: segment.detail,
+    record: segment.video_record_id === record.id ? record : null,
+    entry: "segment",
+  }));
+  const covered = new Set(
+    denial.segments.map(
+      (segment) =>
+        `${segment.video_record_id}|${segment.started_at}|${segment.ended_at}`
+    )
+  );
+  const excluded: VerifyMinuteResult[] = denial.excluded_intervals
+    .filter(
+      (interval) =>
+        !covered.has(
+          `${interval.video_record_id}|${interval.started_at}|${interval.ended_at}`
+        )
+    )
+    .map((interval) => ({
+      slotIso: interval.started_at,
+      endedAt: interval.ended_at,
+      status: interval.status,
+      detail: interval.detail,
+      record: interval.video_record_id === record.id ? record : null,
+      entry: "segment" as const,
+    }));
+  const gaps: VerifyMinuteResult[] = denial.missing_intervals.map((interval) => ({
+    slotIso: interval.started_at,
+    endedAt: interval.ended_at,
+    status: "missing",
+    detail: interval.detail,
+    record: null,
+    entry: "gap",
+  }));
+  return {
+    overall: denial.overall,
+    results: [...segments, ...excluded, ...gaps].sort(
+      (left, right) => Date.parse(left.slotIso) - Date.parse(right.slotIso)
+    ),
+    scope: "minute",
+    source: "watch",
+    detail: denial.detail,
+  };
+}
+
 export function countByStatus(
   results: VerifyMinuteResult[]
 ): Record<VerifyStatus, number> {
@@ -277,4 +379,16 @@ export function formatLocalWindow(startedAt: string, endedAt?: string): string {
       ? end.toLocaleTimeString(undefined, localTime)
       : end.toLocaleString(undefined, localDateTime);
   return `${startText} – ${endText}`;
+}
+
+/** Clock minute for a gap, or the saved window when a clip is attached. */
+export function formatVerifySlot(slotIso: string, endedAt?: string): string {
+  if (endedAt) {
+    return formatLocalWindow(slotIso, endedAt);
+  }
+  const endMs = Date.parse(slotIso) + SEGMENT_MS;
+  if (!Number.isFinite(endMs)) {
+    return formatLocalWindow(slotIso);
+  }
+  return formatLocalWindow(slotIso, new Date(endMs).toISOString());
 }

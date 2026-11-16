@@ -115,7 +115,7 @@ Keep the **Status** column in this table aligned with the repository as work lan
 
 **Exit criteria**: Deterministic chunk duration; disk does not grow unbounded; recovery from process failure documented or automated.
 
-**Progress note**: Epic 5 **exit criteria met** on branch `epic5` — simulated feed, 1-minute chunking, `temp/` output, cleanup worker, and FFmpeg crash restart for continuous modes.
+**Progress note**: Epic 5 **exit criteria met** on branch `epic5` — simulated feed, 1-minute chunking, `temp/` output, cleanup worker, and FFmpeg crash restart for continuous modes. Camera ingest uses the same segment muxer with wall-clock timestamps, UTC `strftime` filenames, a per-run segment CSV, and graceful FFmpeg shutdown. `segment_timeline.py` rebuilds each segment’s UTC start and end from that CSV, the filename stamp, and the container start time. An MP4 that is still missing `moov` while recording is retried; on the final pass that incomplete file is an integrity failure and is not marked permanently invalid.
 
 ---
 
@@ -162,12 +162,12 @@ Keep the **Status** column in this table aligned with the repository as work lan
 | US-7.8  | As a user, I want pagination on the video dashboard so the browser does not crash loading hundreds of videos. |
 | US-7.9  | As a user, I want a loading skeleton UI while videos are being fetched from the database.                |
 | US-7.10 | As a user, I want to click a video card and have it open a video player modal.                           |
-| US-7.11 | As a user, I want the video player to stream the video directly from an IPFS gateway using the CID.      |
+| US-7.11 | As a user, I want the video player to play a saved recording. The browser plays the file returned by the authenticated playback API after server verification. |
 
 
-**Exit criteria**: Filters compose sensibly with pagination; player uses gateway URL pattern documented in env config.
+**Exit criteria**: Filters compose sensibly with pagination. Playback asks the authenticated API to verify each segment and plays only the returned file. The browser does not open a public IPFS gateway URL.
 
-**Progress note**: A global **My Videos** page (US-7.1) is deferred; footage stays camera-scoped on `/cameras/[id]`. E1 lists/filters/paginates that camera’s minutes (`GET /cameras/{id}/recordings`). Watch verifies that minute on the API and plays the returned file (`GET /cameras/{id}/recordings/{record_id}/playback`). Download is still the unverified range download.
+**Progress note**: A global **My Videos** page (US-7.1) is deferred; footage stays camera-scoped on `/cameras/[id]`. E1 lists/filters/paginates that camera’s minutes (`GET /cameras/{id}/recordings`). With no date chosen, the page shows the **10 newest** clips and a day timeline. Watch builds one continuous sequence from the stored start and end times. Each segment, including the next one being preloaded, is verified on `GET /cameras/{id}/recordings/{record_id}/playback` before its bytes reach the player. A segment that is Tampered, Missing, Unavailable, or Failed is not played, and that interval stays visible. Download verifies the selected range on `GET /cameras/{id}/recordings/download` and saves only the verified portions.
 
 ---
 
@@ -188,7 +188,7 @@ Keep the **Status** column in this table aligned with the repository as work lan
 
 **Exit criteria**: Verification path documented (RPC provider, contract ABI, network ID); mismatches explained in UI without leaking secrets.
 
-**Progress note**: Slice E3 (2026-09-17) delivers camera-scoped Verify on `/cameras/[id]`: ethers.js `getSegment` vs API CID/hash/times, expected-minute gaps, Verified/Tampered/Missing/Failed to verify badges, Polygonscan links. RPC is proxied at `/amoy-rpc`. Slice E6 persists each attempt (full / part / per-minute) after the browser report; the API does not re-read the chain. A global video dashboard Verify button (US-8.1) is not added. Watch now verifies on the server before playback (PostgreSQL, `getSegment`, and the IPFS file hash) and plays only a verified segment. The manual Verify button remains for range checks. Download is unchanged.
+**Progress note**: Slice E3 (2026-09-17) delivers camera-scoped Verify on `/cameras/[id]`: ethers.js `getSegment` vs API CID/hash/times, expected-minute gaps, Verified/Tampered/Missing/Failed to verify badges, Polygonscan links. RPC is proxied at `/amoy-rpc`. Slice E6 persists each attempt (full / part / per-minute) after the browser report; the API does not re-read the chain. A global video dashboard Verify button (US-8.1) is not added. Watch verifies each segment on the server before playback (PostgreSQL, `getSegment`, and the IPFS file hash) and plays only a verified file. The manual Verify button remains the browser range check. Download uses the same server check and returns only verified portions, together with a report of gaps and segments that were left out. Nothing is saved when no segment is verified. Statuses are Verified, Tampered, Missing, Unavailable, and Failed.
 
 ---
 
@@ -251,7 +251,7 @@ Epics **1–10** above remain historical delivery notes for the original roadmap
 
 **Exit criteria**: Every story in `docs/CLIENT_PROGRAMMER_USER_STORIES.md` is Implemented, Deferred (with reason), or explicitly Declined; open decisions in that file are resolved.
 
-**Progress note**: Slice A complete 2026-07-21 (including landing refinement: toolbar-free home, problem/solution, signed-in → `/cameras`). Slice B complete 2026-07-21 — apply Alembic revision `20260721_000002` for `deleted_at` + unique active name. Slice C complete 2026-09-09 — **CP-C.P1–P8** (simulate feed, receive stream, 1-minute chunks, camera+time filenames, pre-stage integrity check, stage under `temp/` until processing succeeds, delete temp files only after processing success, capped FFmpeg restart + ingest offline) and **CP-C.C1** (`offline_reason` `ingest_failed` vs `unreachable`; `ingest_offline_at` on the API so the card/detail can say **since** capture stopped); apply Alembic `20260824_000003` for `ingest_offline_at`; see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`. Slice D started 2026-09-14; ingest Pinata + chain + DB wired 2026-09-15 (`ingest_segment_processor.py`). **CP-D.P1–P9** Implemented as of 2026-09-17; **CP-D.C1** Implemented via E3 verify UI (2026-09-17). Slice E: E1 recordings search; E2 Watch from IPFS gateway; E3 full-range verify (ethers.js `getSegment`); E4 partial-range verify; E5 download range as one MP4; E6 persist verification attempts (`POST/GET /cameras/{id}/verification-attempts`, Alembic `20260917_000005`). Download verifies overlapping segments with `verify_recording_range` and assembles only verified files (2026-11-16). **CP-E.P11** remains Deferred.
+**Progress note**: Slice A complete 2026-07-21 (including landing refinement: toolbar-free home, problem/solution, signed-in → `/cameras`). Slice B complete 2026-07-21 — apply Alembic revision `20260721_000002` for `deleted_at` + unique active name. Slice C complete 2026-09-09 — **CP-C.P1–P8** (simulate feed, receive stream, 1-minute chunks, camera+time filenames, pre-stage integrity check, stage under `temp/` until processing succeeds, delete temp files only after processing success, capped FFmpeg restart + ingest offline) and **CP-C.C1** (`offline_reason` `ingest_failed` vs `unreachable`; `ingest_offline_at` on the API so the card/detail can say **since** capture stopped); apply Alembic `20260824_000003` for `ingest_offline_at`; see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`. Slice D started 2026-09-14; ingest Pinata + chain + DB wired 2026-09-15 (`ingest_segment_processor.py`). **CP-D.P1–P9** Implemented as of 2026-09-17; **CP-D.C1** Implemented via E3 verify UI (2026-09-17). Slice E: E1 recordings search, including the 10 newest clips and a day timeline; E2 continuous Watch after per-segment backend verification; E3 full-range verify (ethers.js `getSegment`); E4 partial-range verify; E5 download of verified portions as one MP4; E6 persist verification attempts (`POST/GET /cameras/{id}/verification-attempts`, Alembic `20260917_000005`). Download verifies overlapping segments with `verify_recording_range` and assembles only verified files (2026-11-16). A partial result is discontinuous: the file is the verified portions in order, and the report lists gaps and excluded segments. **CP-E.P11** remains Deferred.
 
 ---
 

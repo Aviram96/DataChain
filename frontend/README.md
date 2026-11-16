@@ -30,19 +30,15 @@ Dev server defaults to
 
 ## Environment variables
 
-Copy `frontend/.env.example` to `frontend/.env.local` only if you need a custom API URL, IPFS gateway, or Polygon RPC/contract.
+Copy `frontend/.env.example` to `frontend/.env.local` only if you need a custom API URL or Polygon RPC/contract.
 
 By default, the dev server proxies **`/api/*`** → `http://127.0.0.1:8000/*` (see `next.config.ts`), so login/register avoid browser CORS issues.
 
-**Watch playback (CP-E.C5):** the camera page streams each minute from a public IPFS HTTP gateway:
-
-`{NEXT_PUBLIC_IPFS_GATEWAY}/ipfs/{cid}`
-
-If `NEXT_PUBLIC_IPFS_GATEWAY` is unset, the app uses `https://gateway.pinata.cloud`. Set a dedicated gateway origin (no trailing slash, no `/ipfs` suffix) when you have one.
+**Watch playback (CP-E.C5):** choosing a saved time plays the contiguous stretch as one sequence. Each segment is loaded from `GET /cameras/{id}/recordings/{record_id}/playback` after the API verifies it. The next segment is verified before it is preloaded. A segment that fails verification is not played. The page does not open a public IPFS gateway URL.
 
 **Verify (CP-E.C7 / C8 / P8):** the camera page compares expected minutes’ API CID/hash/times to on-chain `getSegment` via **ethers.js**. **Verify** checks the whole searched range; **Verify part** checks a tighter start/end inside that range. After the on-screen report exists, the browser **POSTs** it to `/cameras/{id}/verification-attempts` (audit trail; a save failure is a toast, not Tampered). Compact history is on the same camera page. The browser calls same-origin **`/amoy-rpc`**, rewritten to `NEXT_PUBLIC_POLYGON_RPC_URL` (default `https://polygon-amoy.drpc.org`). Contract default is the live Amoy Datachain address; override with `NEXT_PUBLIC_DATACHAIN_CONTRACT_ADDRESS` if you redeploy. Transaction hashes open on Polygonscan (`NEXT_PUBLIC_POLYGONSCAN_TX_BASE`). Restart `npm run dev` after changing `NEXT_PUBLIC_*` values.
 
-**Download (CP-E.C6):** **Download** asks the API to fetch overlapping minutes from the IPFS gateway and combine them with FFmpeg into one `.mp4`. Use the search range, **Download part**, or a per-row Download. The backend needs FFmpeg on PATH.
+**Download (CP-E.C6):** **Download** asks the API to verify the selected range and save an `.mp4` of the verified portions only. The response also includes the verification report. A range with no verified segment saves nothing. Use the open recording, **Download part**, or a per-row Download. The backend needs FFmpeg on PATH.
 
 **Before using `/login` or `/register`, start the backend:**
 

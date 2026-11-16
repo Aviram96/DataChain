@@ -73,7 +73,7 @@ export function VerificationHistory({
       <div>
         <h2 className={`${ui.sectionTitle} text-left`}>Verification history</h2>
         <p className={`mt-1 ${ui.pageSubtitle}`}>
-          Saved results from Verify, Verify part, and per-minute Verify.
+          Earlier checks on this camera.
         </p>
       </div>
 

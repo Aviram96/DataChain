@@ -58,6 +58,7 @@ from app.services.video_chunker import (
     VideoChunkerConfig,
     build_ffmpeg_chunk_command,
     ensure_temp_dir,
+    ffmpeg_subprocess_env,
     resolve_chunk_duration_seconds,
 )
 
@@ -400,8 +401,10 @@ class CameraIngest:
         )
         self._with_session(lambda db: clear_ingest_offline(db, self._config.camera_id))
         recover_orphan_segment_runs(chunk_config.temp_dir)
-        ffmpeg_env = os.environ.copy()
-        ffmpeg_env["TZ"] = "UTC"
+        popen_kwargs: dict[str, object] = {}
+        env = ffmpeg_subprocess_env(chunk_config)
+        if env is not None:
+            popen_kwargs["env"] = env
         active_csv: Path | None = None
 
         def build_command_for_run() -> list[str]:
@@ -443,7 +446,7 @@ class CameraIngest:
             max_restarts=max_restarts,
             log_label=f"camera {self._config.camera_id}",
             graceful_stop=True,
-            popen_kwargs={"env": ffmpeg_env},
+            popen_kwargs=popen_kwargs,
             on_process_start=note_ffmpeg_started,
             on_process_exit=close_finished_run,
         )

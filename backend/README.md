@@ -160,7 +160,9 @@ Optional overlap window (ISO-8601):
 
 Both set: end must be after start (HTTP **400** otherwise). The camera detail page sends a local date plus start/end times as UTC ISO values.
 
-`GET /cameras/{id}/recordings/download` (CP-E.P10) requires **`started_at` and `ended_at`**. It fetches overlapping minutes from the IPFS HTTP gateway (oldest first), concatenates them with **FFmpeg** (`-c copy`) into one `.mp4`, and returns that file. Owner 404 matches the list. Empty range: **404**. More than 24 hours of minutes: **400**. Gateway or concat failure: **502** (FFmpeg missing: **503**). Optional `IPFS_GATEWAY` (default `https://gateway.pinata.cloud`). FFmpeg must be on PATH.
+`GET /cameras/{id}/recordings/{record_id}/playback` verifies that owned segment (`verify_recording_range`: database metadata, on-chain `getSegment`, and the file hash) and streams the file only when it is verified. Any other result is HTTP **409** JSON and no media. Unknown record: **404**.
+
+`GET /cameras/{id}/recordings/download` (CP-E.P10) requires **`started_at` and `ended_at`**. It verifies every overlapping segment, then returns `multipart/form-data` with a JSON report and one `.mp4` of the verified files (FFmpeg `-c copy` when there are two or more). A partial file contains only those portions, in order. No verified segment, including an empty range: HTTP **409** JSON report and no file. Owner 404 matches the list. More than 24 hours: **400**. The API retrieves file bytes through `IPFS_GATEWAY` (default `https://gateway.pinata.cloud`) while verifying; the browser does not play that gateway URL. Concat failure: **502** (FFmpeg missing: **503**). FFmpeg must be on PATH.
 
 ### Verification attempts (Slice E / CP-E.P8)
 
