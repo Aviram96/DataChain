@@ -1,4 +1,4 @@
-"""Combine one-minute recordings into one MP4 for download (Slice E / CP-E.P10)."""
+"""Combine verified recordings into one MP4 for download."""
 
 from __future__ import annotations
 
@@ -141,6 +141,47 @@ def concat_mp4s(
             (completed.stderr or b"").decode("utf-8", errors="replace")[-500:],
         )
         raise RecordingDownloadError("Could not combine recordings into one file.", 502)
+
+
+def assemble_verified_files(
+    segment_paths: list[Path],
+    work_dir: Path,
+    *,
+    concat: ConcatOnce | None = None,
+) -> Path:
+    """Join segment files that verification has already accepted.
+
+    Does not fetch from IPFS and does not decide which files are safe.
+    A single file is returned as-is. Two or more are copied together with
+    the existing FFmpeg concat.
+    """
+    if not segment_paths:
+        raise RecordingDownloadError("No verified recordings in that range.", 404)
+    for path in segment_paths:
+        if not _file_is_inside(path, work_dir) or path.stat().st_size <= 0:
+            raise RecordingDownloadError(
+                "A verified recording file was not available.",
+                502,
+            )
+    if len(segment_paths) == 1:
+        return segment_paths[0]
+    output = work_dir / COMBINED_NAME
+    merge = concat if concat is not None else concat_mp4s
+    merge(segment_paths, output)
+    if not _file_is_inside(output, work_dir) or output.stat().st_size <= 0:
+        raise RecordingDownloadError(
+            "Could not combine recordings into one file.",
+            502,
+        )
+    return output
+
+
+def _file_is_inside(path: Path, work_dir: Path) -> bool:
+    try:
+        path.resolve().relative_to(work_dir.resolve())
+    except (OSError, ValueError):
+        return False
+    return path.is_file()
 
 
 def assemble_range_download(

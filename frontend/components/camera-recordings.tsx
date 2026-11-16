@@ -4,11 +4,16 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { networkErrorMessage } from "@/lib/api";
 import { CamerasApiError } from "@/lib/cameras-api";
-import { ipfsGatewayUrl } from "@/lib/ipfs-gateway";
 import {
   downloadRecordings,
+  DownloadVerificationError,
+  fetchRecordingPlayback,
   listAllRecordings,
   listRecordings,
+  PlaybackVerificationError,
+  saveRecordingDownload,
+  type DownloadVerification,
+  type PlaybackDenial,
   type VideoRecordPublic,
 } from "@/lib/recordings-api";
 import { ui } from "@/lib/ui";
@@ -51,6 +56,8 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   const [pages, setPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [watching, setWatching] = useState<VideoRecordPublic | null>(null);
+  const [watchSrc, setWatchSrc] = useState<string | null>(null);
+  const [watchPendingId, setWatchPendingId] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [verifyReport, setVerifyReport] = useState<VerifyReport | null>(null);
@@ -58,6 +65,11 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
   const [partialStart, setPartialStart] = useState("");
   const [partialEnd, setPartialEnd] = useState("");
   const playbackErrorFor = useRef<string | null>(null);
+  const watchSeq = useRef(0);
+  const activitySeq = useRef(0);
+  const watchAbort = useRef<AbortController | null>(null);
+  const downloadAbort = useRef<AbortController | null>(null);
+  const watchBlob = useRef<string | null>(null);
 
   const load = useCallback(
     async (pageToLoad: number) => {
@@ -107,6 +119,16 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
     }
   }, [applied, cameraId]);
 
+  useEffect(() => {
+    return () => {
+      watchAbort.current?.abort();
+      downloadAbort.current?.abort();
+      if (watchBlob.current) {
+        URL.revokeObjectURL(watchBlob.current);
+      }
+    };
+  }, []);
+
   function applySearch(event: FormEvent) {
     event.preventDefault();
     const window = rangeFromForm(dateInput, startInput, endInput);
@@ -126,18 +148,77 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
     setApplied({});
   }
 
-  function openWatch(record: VideoRecordPublic) {
-    const cid = record.ipfs_cid.trim();
-    if (!cid) {
-      showToast("This recording has no IPFS CID, so it cannot be played.", "error");
-      return;
+  function revokeWatchBlob() {
+    if (watchBlob.current) {
+      URL.revokeObjectURL(watchBlob.current);
+      watchBlob.current = null;
     }
-    playbackErrorFor.current = null;
-    setWatching(record);
   }
 
   function closeWatch() {
+    watchSeq.current += 1;
+    watchAbort.current?.abort();
+    watchAbort.current = null;
+    revokeWatchBlob();
+    setWatchSrc(null);
     setWatching(null);
+    setWatchPendingId(null);
+  }
+
+  function openWatch(record: VideoRecordPublic) {
+    watchAbort.current?.abort();
+    downloadAbort.current?.abort();
+    const controller = new AbortController();
+    watchAbort.current = controller;
+    const seq = watchSeq.current + 1;
+    watchSeq.current = seq;
+    const activity = ++activitySeq.current;
+    revokeWatchBlob();
+    playbackErrorFor.current = null;
+    setWatchSrc(null);
+    setWatching(null);
+    setVerifyReport(null);
+    setWatchPendingId(record.id);
+
+    void (async () => {
+      try {
+        const blob = await fetchRecordingPlayback(
+          cameraId,
+          record.id,
+          controller.signal
+        );
+        if (seq !== watchSeq.current || activity !== activitySeq.current) {
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        watchBlob.current = url;
+        setWatchSrc(url);
+        setWatching(record);
+        setVerifyReport(verifiedWatchReport(record));
+      } catch (error) {
+        if (
+          seq !== watchSeq.current ||
+          activity !== activitySeq.current ||
+          controller.signal.aborted
+        ) {
+          return;
+        }
+        if (error instanceof PlaybackVerificationError) {
+          setVerifyReport(deniedWatchReport(record, error.denial));
+          showToast(error.denial.detail, "error");
+          return;
+        }
+        if (error instanceof CamerasApiError) {
+          showToast(error.message, "error");
+          return;
+        }
+        showToast(networkErrorMessage(), "error");
+      } finally {
+        if (seq === watchSeq.current) {
+          setWatchPendingId(null);
+        }
+      }
+    })();
   }
 
   function handlePlaybackError() {
@@ -145,10 +226,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
       return;
     }
     playbackErrorFor.current = watching.id;
-    showToast(
-      "Could not play this recording from IPFS. Check the gateway URL or try again.",
-      "error"
-    );
+    showToast("Could not play this recording. Try again.", "error");
   }
 
   async function runVerify(
@@ -166,6 +244,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
       return;
     }
 
+    const activity = ++activitySeq.current;
     setVerifying(true);
     try {
       const records =
@@ -206,7 +285,11 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
         overall: aggregateStatus(results.map((result) => result.status)),
         results,
         scope,
+        source: "verify",
       };
+      if (activity !== activitySeq.current) {
+        return;
+      }
       setVerifyReport(report);
       try {
         await createVerificationAttempt(cameraId, {
@@ -221,8 +304,14 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
             video_record_id: result.record?.id ?? null,
           })),
         });
+        if (activity !== activitySeq.current) {
+          return;
+        }
         setHistoryTick((tick) => tick + 1);
       } catch (persistError) {
+        if (activity !== activitySeq.current) {
+          return;
+        }
         if (persistError instanceof CamerasApiError) {
           showToast(persistError.message, "error");
         } else {
@@ -233,6 +322,9 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
         }
       }
     } catch (error) {
+      if (activity !== activitySeq.current) {
+        return;
+      }
       if (error instanceof CamerasApiError) {
         showToast(error.message, "error");
       } else {
@@ -313,18 +405,46 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
     );
   }
 
-  async function runDownload(range: { startedAt: string; endedAt: string }) {
+  async function runDownload(
+    range: { startedAt: string; endedAt: string },
+    scope: "full" | "partial" | "minute",
+    records: VideoRecordPublic[]
+  ) {
+    watchAbort.current?.abort();
+    downloadAbort.current?.abort();
+    const controller = new AbortController();
+    downloadAbort.current = controller;
+    const activity = ++activitySeq.current;
     setDownloading(true);
+    setVerifyReport(null);
     try {
-      await downloadRecordings(cameraId, range);
+      const result = await downloadRecordings(cameraId, range, controller.signal);
+      if (activity !== activitySeq.current) {
+        return;
+      }
+      setVerifyReport(downloadVerifyReport(result.report, scope, records));
+      saveRecordingDownload(result.video, result.filename);
+      if (result.report.discontinuous || result.report.overall !== "verified") {
+        showToast(result.report.detail, "error");
+      }
     } catch (error) {
+      if (activity !== activitySeq.current || controller.signal.aborted) {
+        return;
+      }
+      if (error instanceof DownloadVerificationError) {
+        setVerifyReport(downloadVerifyReport(error.report, scope, records));
+        showToast(error.report.detail, "error");
+        return;
+      }
       if (error instanceof CamerasApiError) {
         showToast(error.message, "error");
       } else {
         showToast(networkErrorMessage(), "error");
       }
     } finally {
-      setDownloading(false);
+      if (activity === activitySeq.current) {
+        setDownloading(false);
+      }
     }
   }
 
@@ -336,10 +456,14 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
       );
       return;
     }
-    void runDownload({
-      startedAt: applied.startedAt,
-      endedAt: applied.endedAt,
-    });
+    void runDownload(
+      {
+        startedAt: applied.startedAt,
+        endedAt: applied.endedAt,
+      },
+      "full",
+      items
+    );
   }
 
   function downloadPartialRange() {
@@ -347,14 +471,21 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
     if (!window) {
       return;
     }
-    void runDownload(window);
+    void runDownload(window, "partial", items);
   }
 
   function downloadOne(record: VideoRecordPublic) {
-    void runDownload({
-      startedAt: record.started_at,
-      endedAt: record.ended_at,
-    });
+    const records = items.some((item) => item.id === record.id)
+      ? items
+      : [...items, record];
+    void runDownload(
+      {
+        startedAt: record.started_at,
+        endedAt: record.ended_at,
+      },
+      "minute",
+      records
+    );
   }
 
   const busy = verifying || downloading;
@@ -523,7 +654,7 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
                     onClick={() => openWatch(record)}
                     className={ui.btnCompact}
                   >
-                    Watch
+                    {watchPendingId === record.id ? "Verifying…" : "Watch"}
                   </button>
                   <button
                     type="button"
@@ -581,10 +712,10 @@ export function CameraRecordings({ cameraId }: CameraRecordingsProps) {
 
       <VerificationHistory cameraId={cameraId} refreshKey={historyTick} />
 
-      {watching ? (
+      {watching && watchSrc ? (
         <RecordingPlayer
           record={watching}
-          src={ipfsGatewayUrl(watching.ipfs_cid)}
+          src={watchSrc}
           onClose={closeWatch}
           onPlaybackError={handlePlaybackError}
         />
@@ -705,6 +836,96 @@ function isoToLocalTime(iso: string): string {
   const hours = String(parsed.getHours()).padStart(2, "0");
   const minutes = String(parsed.getMinutes()).padStart(2, "0");
   return `${hours}:${minutes}`;
+}
+
+function downloadVerifyReport(
+  report: DownloadVerification,
+  scope: "full" | "partial" | "minute",
+  records: VideoRecordPublic[]
+): VerifyReport {
+  const byId = new Map(records.map((record) => [record.id, record]));
+  const segments: VerifyMinuteResult[] = report.segments.map((segment) => {
+    const known = byId.get(segment.video_record_id) ?? null;
+    const record =
+      known ??
+      (segment.tx_hash
+        ? {
+            id: segment.video_record_id,
+            camera_id: "",
+            started_at: segment.started_at,
+            ended_at: segment.ended_at,
+            ipfs_cid: "",
+            segment_hash: "",
+            tx_hash: segment.tx_hash,
+          }
+        : null);
+    return {
+      slotIso: segment.started_at,
+      endedAt: segment.ended_at,
+      status: segment.status,
+      detail: segment.detail,
+      record,
+      entry: "segment" as const,
+    };
+  });
+  const gaps: VerifyMinuteResult[] = report.missing_intervals.map((interval) => ({
+    slotIso: interval.started_at,
+    endedAt: interval.ended_at,
+    status: "missing" as const,
+    detail: interval.detail,
+    record: null,
+    entry: "gap" as const,
+  }));
+  return {
+    overall: report.overall,
+    results: [...segments, ...gaps].sort(
+      (left, right) => Date.parse(left.slotIso) - Date.parse(right.slotIso)
+    ),
+    scope,
+    source: "download",
+    detail: report.detail,
+  };
+}
+
+function verifiedWatchReport(record: VideoRecordPublic): VerifyReport {
+  return {
+    overall: "verified",
+    scope: "minute",
+    results: [
+      {
+        slotIso: record.started_at,
+        endedAt: record.ended_at,
+        status: "verified",
+        detail: "Metadata and file content match the blockchain anchor.",
+        record,
+      },
+    ],
+  };
+}
+
+function deniedWatchReport(
+  record: VideoRecordPublic,
+  denial: PlaybackDenial
+): VerifyReport {
+  const segments = denial.segments.map((segment) => ({
+    slotIso: segment.started_at,
+    endedAt: segment.ended_at,
+    status: segment.status,
+    detail: segment.detail,
+    record: segment.video_record_id === record.id ? record : null,
+  }));
+  const gaps = denial.missing_intervals.map((interval) => ({
+    slotIso: interval.started_at,
+    endedAt: interval.ended_at,
+    status: "missing" as const,
+    detail: interval.detail,
+    record: null,
+  }));
+  return {
+    overall: denial.overall,
+    scope: "minute",
+    results: [...segments, ...gaps],
+  };
 }
 
 function statusForRecord(report: VerifyReport | null, recordId: string) {

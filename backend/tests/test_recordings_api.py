@@ -105,6 +105,7 @@ def _add_segment(
     started: datetime,
     *,
     cid: str = CID,
+    segment_hash: str = HASH,
 ) -> VideoRecord:
     record = VideoRecord(
         id=uuid4(),
@@ -112,7 +113,7 @@ def _add_segment(
         started_at=started,
         ended_at=started + timedelta(seconds=60),
         ipfs_cid=cid,
-        segment_hash=HASH,
+        segment_hash=segment_hash,
         tx_hash=TX,
         created_at=datetime.now(timezone.utc),
     )
@@ -272,41 +273,67 @@ def test_download_recordings_empty_range(client: TestClient) -> None:
             "ended_at": "2026-08-24T12:05:00Z",
         },
     )
-    assert response.status_code == 404
+    assert response.status_code == 409
+    assert response.headers["content-type"].startswith("application/json")
+    body = response.json()
+    assert body["overall"] == "missing"
+    assert body["discontinuous"] is False
+    assert body["segments"] == []
+    assert body["missing_intervals"]
+    assert "nothing was downloaded" in body["detail"]
 
 
 def test_download_recordings_combines_range(
     client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    import hashlib
     from pathlib import Path
 
-    from app.services import recording_download as download_mod
+    from app.services.chain_anchor import SegmentAnchor
 
-    def fake_assemble(cids: list[str], work_dir: Path, **_kwargs: object) -> Path:
-        assert cids == [CID]
-        output = work_dir / "combined.mp4"
-        output.write_bytes(b"joined-mp4")
-        return output
-
-    monkeypatch.setattr(download_mod, "assemble_range_download", fake_assemble)
-    monkeypatch.setattr(
-        "app.routers.recordings.assemble_range_download", fake_assemble
-    )
-
+    video = b"joined-mp4"
+    digest = hashlib.sha256(video).hexdigest()
     token = _register_and_token(client, "dl-ok@example.com")
     camera_id = _create_camera(client, token)
-    _add_segment(db_session, camera_id, NOON)
+    record = _add_segment(db_session, camera_id, NOON, segment_hash=digest)
+
+    def get_segment(
+        camera_id_arg: UUID, started_at: datetime, **_kwargs: object
+    ) -> SegmentAnchor:
+        ended = record.ended_at
+        if ended.tzinfo is None:
+            ended = ended.replace(tzinfo=timezone.utc)
+        return SegmentAnchor(
+            camera_id=camera_id_arg,
+            started_at=started_at,
+            ended_at=ended,
+            cid=record.ipfs_cid,
+            segment_hash=record.segment_hash,
+        )
+
+    def fetch(cid: str, dest: Path, **_kwargs: object) -> None:
+        assert cid == record.ipfs_cid
+        dest.write_bytes(video)
+
+    monkeypatch.setattr(
+        "app.services.recording_verification.get_segment",
+        get_segment,
+    )
+    monkeypatch.setattr(
+        "app.services.recording_verification.fetch_cid_to_file",
+        fetch,
+    )
 
     response = client.get(
         f"/cameras/{camera_id}/recordings/download",
         headers=_auth_headers(token),
         params={
             "started_at": "2026-08-24T12:00:00Z",
-            "ended_at": "2026-08-24T12:05:00Z",
+            "ended_at": "2026-08-24T12:01:00Z",
         },
     )
     assert response.status_code == 200
-    assert response.content == b"joined-mp4"
-    assert "video/mp4" in response.headers.get("content-type", "")
-    disposition = response.headers.get("content-disposition", "")
-    assert "recordings_20260824T120000Z_20260824T120500Z.mp4" in disposition
+    assert response.headers["content-type"].startswith("multipart/form-data")
+    assert video in response.content
+    assert b"Every segment in this range is verified." in response.content
+    assert "recordings_20260824T120000Z_20260824T120100Z.mp4" in response.text

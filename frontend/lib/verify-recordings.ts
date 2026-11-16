@@ -7,6 +7,8 @@ export type VerifyStatus =
   | "verified"
   | "tampered"
   | "missing"
+  | "unavailable"
+  | "failed"
   | "failed_to_verify";
 
 export type ChainRead =
@@ -23,15 +25,20 @@ export type ChainRead =
 
 export type VerifyMinuteResult = {
   slotIso: string;
+  endedAt?: string;
   status: VerifyStatus;
   detail: string;
   record: VideoRecordPublic | null;
+  /** Download rows distinguish a stored segment from a gap in the request. */
+  entry?: "segment" | "gap";
 };
 
 export type VerifyReport = {
   overall: VerifyStatus;
   results: VerifyMinuteResult[];
   scope?: "full" | "partial" | "minute";
+  source?: "verify" | "watch" | "download";
+  detail?: string;
 };
 
 export type TimeWindow = {
@@ -159,6 +166,12 @@ export function aggregateStatus(statuses: VerifyStatus[]): VerifyStatus {
   if (statuses.some((status) => status === "tampered")) {
     return "tampered";
   }
+  if (statuses.some((status) => status === "failed")) {
+    return "failed";
+  }
+  if (statuses.some((status) => status === "unavailable")) {
+    return "unavailable";
+  }
   if (statuses.some((status) => status === "failed_to_verify")) {
     return "failed_to_verify";
   }
@@ -176,6 +189,10 @@ export function verifyStatusLabel(status: VerifyStatus): string {
       return "Tampered";
     case "missing":
       return "Missing";
+    case "unavailable":
+      return "Unavailable";
+    case "failed":
+      return "Failed";
     case "failed_to_verify":
       return "Failed to verify";
   }
@@ -188,6 +205,8 @@ export function countByStatus(
     verified: 0,
     tampered: 0,
     missing: 0,
+    unavailable: 0,
+    failed: 0,
     failed_to_verify: 0,
   };
   for (const result of results) {

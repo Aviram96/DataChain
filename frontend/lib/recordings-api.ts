@@ -85,58 +85,221 @@ export async function listAllRecordings(
   return items;
 }
 
+export type PlaybackStatus =
+  | "verified"
+  | "tampered"
+  | "missing"
+  | "unavailable"
+  | "failed";
+
+export type PlaybackSegmentResult = {
+  video_record_id: string;
+  started_at: string;
+  ended_at: string;
+  status: PlaybackStatus;
+  detail: string;
+};
+
+export type PlaybackInterval = {
+  started_at: string;
+  ended_at: string;
+  detail: string;
+};
+
+export type PlaybackDenial = {
+  overall: PlaybackStatus;
+  detail: string;
+  segments: PlaybackSegmentResult[];
+  missing_intervals: PlaybackInterval[];
+  excluded_intervals: Array<
+    PlaybackInterval & { status: PlaybackStatus; video_record_id: string }
+  >;
+};
+
+export class PlaybackVerificationError extends Error {
+  readonly denial: PlaybackDenial;
+
+  constructor(denial: PlaybackDenial) {
+    super(denial.detail);
+    this.name = "PlaybackVerificationError";
+    this.denial = denial;
+  }
+}
+
+export async function fetchRecordingPlayback(
+  cameraId: string,
+  recordId: string,
+  signal?: AbortSignal
+): Promise<Blob> {
+  const response = await authFetch(
+    `${getApiBaseUrl()}/cameras/${cameraId}/recordings/${recordId}/playback`,
+    { signal }
+  );
+
+  if (!response.ok) {
+    const body = await readJson(response);
+    const denial = playbackDenialFrom(body);
+    if (denial) {
+      throw new PlaybackVerificationError(denial);
+    }
+    throw new CamerasApiError(
+      messageFromBody(body, "Could not play this recording."),
+      response.status
+    );
+  }
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("video/")) {
+    throw new CamerasApiError("Could not play this recording.", response.status);
+  }
+  return response.blob();
+}
+
+async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+function playbackDenialFrom(body: unknown): PlaybackDenial | null {
+  if (typeof body !== "object" || body === null) {
+    return null;
+  }
+  const record = body as Partial<PlaybackDenial>;
+  if (
+    typeof record.overall !== "string" ||
+    typeof record.detail !== "string" ||
+    !Array.isArray(record.segments)
+  ) {
+    return null;
+  }
+  return record as PlaybackDenial;
+}
+
+function messageFromBody(body: unknown, fallback: string): string {
+  if (typeof body !== "object" || body === null || !("detail" in body)) {
+    return fallback;
+  }
+  const detail = (body as { detail?: unknown }).detail;
+  return typeof detail === "string" && detail.length > 0 ? detail : fallback;
+}
+
+export type DownloadSegmentResult = PlaybackSegmentResult & {
+  tx_hash?: string | null;
+};
+
+export type DownloadVerification = {
+  overall: PlaybackStatus;
+  detail: string;
+  discontinuous: boolean;
+  segments: DownloadSegmentResult[];
+  missing_intervals: PlaybackInterval[];
+  excluded_intervals: PlaybackDenial["excluded_intervals"];
+};
+
+export class DownloadVerificationError extends Error {
+  readonly report: DownloadVerification;
+
+  constructor(report: DownloadVerification) {
+    super(report.detail);
+    this.name = "DownloadVerificationError";
+    this.report = report;
+  }
+}
+
+export type DownloadResult = {
+  report: DownloadVerification;
+  video: Blob;
+  filename: string;
+};
+
 export async function downloadRecordings(
   cameraId: string,
-  params: { startedAt: string; endedAt: string }
-): Promise<void> {
+  params: { startedAt: string; endedAt: string },
+  signal?: AbortSignal
+): Promise<DownloadResult> {
   const search = new URLSearchParams({
     started_at: params.startedAt,
     ended_at: params.endedAt,
   });
   const response = await authFetch(
-    `${getApiBaseUrl()}/cameras/${cameraId}/recordings/download?${search.toString()}`
+    `${getApiBaseUrl()}/cameras/${cameraId}/recordings/download?${search.toString()}`,
+    { signal }
   );
 
   if (!response.ok) {
-    const message = await parseApiErrorMessage(
-      response,
-      "Could not download recordings."
+    const body = await readJson(response);
+    const report = downloadReportFrom(body);
+    if (report) {
+      throw new DownloadVerificationError(report);
+    }
+    throw new CamerasApiError(
+      messageFromBody(body, "Could not download recordings."),
+      response.status
     );
-    throw new CamerasApiError(message, response.status);
   }
 
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("multipart/form-data")) {
+    throw new CamerasApiError("Could not download recordings.", response.status);
+  }
+  const form = await response.formData();
+  const report = downloadReportFrom(await readFormJson(form.get("report")));
+  const video = form.get("video");
+  if (!report || !(video instanceof Blob) || video.size <= 0) {
+    throw new CamerasApiError("Could not download recordings.", response.status);
+  }
+  const filename =
+    video instanceof File && video.name ? video.name : "recording.mp4";
+  return { report, video, filename };
+}
+
+export function saveRecordingDownload(video: Blob, filename: string): void {
+  const url = URL.createObjectURL(video);
   const link = document.createElement("a");
   link.href = url;
-  link.download = filenameFromDisposition(
-    response.headers.get("Content-Disposition")
-  );
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
 }
 
-function filenameFromDisposition(header: string | null): string {
-  if (!header) {
-    return "recording.mp4";
-  }
-  const utf = /filename\*=UTF-8''([^;]+)/i.exec(header);
-  if (utf?.[1]) {
+async function readFormJson(part: FormDataEntryValue | null): Promise<unknown> {
+  if (typeof part === "string") {
     try {
-      return decodeURIComponent(utf[1].trim());
+      return JSON.parse(part) as unknown;
     } catch {
-      return utf[1].trim();
+      return null;
     }
   }
-  const quoted = /filename="([^"]+)"/i.exec(header);
-  if (quoted?.[1]) {
-    return quoted[1];
+  if (part instanceof Blob) {
+    try {
+      return JSON.parse(await part.text()) as unknown;
+    } catch {
+      return null;
+    }
   }
-  const plain = /filename=([^;]+)/i.exec(header);
-  if (plain?.[1]) {
-    return plain[1].trim();
-  }
-  return "recording.mp4";
+  return null;
 }
+
+function downloadReportFrom(body: unknown): DownloadVerification | null {
+  if (typeof body !== "object" || body === null) {
+    return null;
+  }
+  const record = body as Partial<DownloadVerification>;
+  if (
+    typeof record.overall !== "string" ||
+    typeof record.detail !== "string" ||
+    typeof record.discontinuous !== "boolean" ||
+    !Array.isArray(record.segments) ||
+    !Array.isArray(record.missing_intervals) ||
+    !Array.isArray(record.excluded_intervals)
+  ) {
+    return null;
+  }
+  return record as DownloadVerification;
+}
+

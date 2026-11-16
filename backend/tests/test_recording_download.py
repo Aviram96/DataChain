@@ -11,6 +11,7 @@ import requests
 from app.services.recording_download import (
     RecordingDownloadError,
     assemble_range_download,
+    assemble_verified_files,
     build_concat_copy_command,
     download_filename,
     ipfs_gateway_url,
@@ -65,6 +66,55 @@ def test_assemble_range_download_fetches_and_concats(tmp_path: Path) -> None:
     )
     assert fetched == ["cid-a", "cid-b"]
     assert output.read_bytes() == b"joined"
+
+
+def test_assemble_verified_files_returns_the_only_segment(tmp_path: Path) -> None:
+    work = tmp_path / "work"
+    work.mkdir()
+    only = work / "one.mp4"
+    only.write_bytes(b"only-verified")
+
+    def fail_concat(_paths: list[Path], _output: Path) -> None:
+        raise AssertionError("a single verified file is not concatenated")
+
+    output = assemble_verified_files([only], work, concat=fail_concat)
+    assert output == only
+    assert output.read_bytes() == b"only-verified"
+
+
+def test_assemble_verified_files_concats_only_given_paths(tmp_path: Path) -> None:
+    work = tmp_path / "work"
+    work.mkdir()
+    first = work / "first.mp4"
+    second = work / "second.mp4"
+    rejected = work / "rejected.mp4"
+    first.write_bytes(b"yes-a")
+    second.write_bytes(b"yes-b")
+    rejected.write_bytes(b"no")
+    seen: list[list[bytes]] = []
+
+    def concat(paths: list[Path], output: Path) -> None:
+        seen.append([path.read_bytes() for path in paths])
+        output.write_bytes(b"joined")
+
+    output = assemble_verified_files([first, second], work, concat=concat)
+    assert seen == [[b"yes-a", b"yes-b"]]
+    assert output.read_bytes() == b"joined"
+    assert rejected.read_bytes() == b"no"
+
+
+def test_assemble_verified_files_rejects_empty_or_outside(tmp_path: Path) -> None:
+    work = tmp_path / "work"
+    work.mkdir()
+    with pytest.raises(RecordingDownloadError) as empty:
+        assemble_verified_files([], work)
+    assert empty.value.status_code == 404
+
+    outside = tmp_path / "outside.mp4"
+    outside.write_bytes(b"escape")
+    with pytest.raises(RecordingDownloadError) as escaped:
+        assemble_verified_files([outside], work)
+    assert escaped.value.status_code == 502
 
 
 def test_assemble_rejects_oversized_range(tmp_path: Path) -> None:

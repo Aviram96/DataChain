@@ -21,15 +21,24 @@ export function RecordingVerifyPanel({ report }: RecordingVerifyPanelProps) {
         <h3 className={ui.sectionTitle}>Verification result</h3>
         <VerifyBadge status={report.overall} />
       </div>
-      <p className={`mt-2 ${ui.muted}`}>{overallCopy(report.overall)}</p>
+      <p className={`mt-2 ${ui.muted}`}>
+        {report.source === "download" && report.detail
+          ? report.detail
+          : overallCopy(report.overall)}
+      </p>
       {report.scope === "partial" ? (
         <p className={`mt-1 ${ui.hint}`}>
           Only the chosen part of the selected range was checked.
         </p>
       ) : null}
       <p className={`mt-1 ${ui.hint}`}>
-        {report.results.length} minute
-        {report.results.length === 1 ? "" : "s"} checked
+        {report.source === "download"
+          ? `${storedSegmentCount(report.results)} stored segment${
+              storedSegmentCount(report.results) === 1 ? "" : "s"
+            } checked`
+          : `${report.results.length} minute${
+              report.results.length === 1 ? "" : "s"
+            } checked`}
         {summaryCounts(counts)}
       </p>
       <ul className="mt-4 space-y-2">
@@ -39,13 +48,16 @@ export function RecordingVerifyPanel({ report }: RecordingVerifyPanelProps) {
             : null;
           return (
             <li
-              key={`${result.slotIso}-${result.record?.id ?? "gap"}`}
+              key={`${result.entry ?? "row"}-${result.slotIso}-${result.endedAt ?? ""}-${result.record?.id ?? "gap"}-${result.status}`}
               className="rounded-xl border border-landing-ink/10 bg-white/70 p-3"
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0 space-y-1">
                   <p className="text-sm font-medium text-landing-ink">
-                    {formatLocalWindow(result.slotIso, result.record?.ended_at)}
+                    {formatLocalWindow(
+                      result.slotIso,
+                      result.endedAt ?? result.record?.ended_at
+                    )}
                   </p>
                   <p className={ui.hint}>{result.detail}</p>
                 </div>
@@ -81,6 +93,10 @@ function badgeClass(status: VerifyStatus): string {
       return ui.badgeTampered;
     case "missing":
       return ui.badgeMissing;
+    case "unavailable":
+      return ui.badgeFailedVerify;
+    case "failed":
+      return ui.badgeFailedVerify;
     case "failed_to_verify":
       return ui.badgeFailedVerify;
   }
@@ -94,9 +110,23 @@ function overallCopy(status: VerifyStatus): string {
       return "At least one minute does not match the blockchain proof.";
     case "missing":
       return "Some expected minutes have no recording in the app.";
+    case "unavailable":
+      return "The video file could not be retrieved, so it was not played.";
+    case "failed":
+      return "Verification could not be completed, so the video was not played.";
     case "failed_to_verify":
       return "Some minutes could not be checked (RPC). That is not a tamper result.";
   }
+}
+
+function storedSegmentCount(
+  results: { entry?: "segment" | "gap"; record: unknown }[]
+): number {
+  return results.filter((result) =>
+    result.entry === undefined
+      ? Boolean(result.record)
+      : result.entry === "segment"
+  ).length;
 }
 
 function summaryCounts(counts: Record<VerifyStatus, number>): string {
@@ -105,6 +135,8 @@ function summaryCounts(counts: Record<VerifyStatus, number>): string {
       ["verified", "Verified"],
       ["tampered", "Tampered"],
       ["missing", "Missing"],
+      ["unavailable", "Unavailable"],
+      ["failed", "Failed"],
       ["failed_to_verify", "Failed to verify"],
     ] as const
   )
