@@ -41,9 +41,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(cameras.router, prefix="/cameras", tags=["cameras"])
 app.include_router(recordings.router, prefix="/cameras", tags=["recordings"])
-app.include_router(
-    verification.router, prefix="/cameras", tags=["verification"]
-)
+app.include_router(verification.router, prefix="/cameras", tags=["verification"])
 
 
 @app.get("/health")

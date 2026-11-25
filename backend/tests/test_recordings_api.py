@@ -145,7 +145,9 @@ def test_recordings_require_auth(client: TestClient) -> None:
     assert response.status_code == 401
 
 
-def test_recordings_hidden_from_other_owner(client: TestClient, db_session: Session) -> None:
+def test_recordings_hidden_from_other_owner(
+    client: TestClient, db_session: Session
+) -> None:
     token_a = _register_and_token(client, "owner-a@example.com")
     token_b = _register_and_token(client, "owner-b@example.com")
     camera_id = _create_camera(client, token_a)

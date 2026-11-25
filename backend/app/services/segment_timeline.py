@@ -177,8 +177,7 @@ def media_range_to_utc(
         raise SegmentTimelinePermanentError("UTC reference must be timezone-aware")
 
     if not all(
-        math.isfinite(value)
-        for value in (media_start, media_end, reference_media_time)
+        math.isfinite(value) for value in (media_start, media_end, reference_media_time)
     ):
         raise SegmentTimelinePermanentError("Invalid media timestamps")
 

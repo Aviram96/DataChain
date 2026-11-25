@@ -262,7 +262,11 @@ def test_unauthenticated_requests_return_401(
         ("get", f"/cameras/{camera_id}/recordings/{record_id}/playback", None),
         ("get", f"/cameras/{camera_id}/recordings/download", download),
         ("get", f"/cameras/{camera_id}/verification-attempts", None),
-        ("post", f"/cameras/{camera_id}/verification-attempts", _attempt_payload(record_id)),
+        (
+            "post",
+            f"/cameras/{camera_id}/verification-attempts",
+            _attempt_payload(record_id),
+        ),
     ]
     for method, path, payload in routes:
         if method == "get":
@@ -284,9 +288,7 @@ def test_other_user_cannot_read_update_or_delete_camera(
 ) -> None:
     headers = _auth_headers(users.token_b)
 
-    _assert_camera_hidden(
-        client.get(f"/cameras/{users.camera_a}", headers=headers)
-    )
+    _assert_camera_hidden(client.get(f"/cameras/{users.camera_a}", headers=headers))
     _assert_camera_hidden(
         client.patch(
             f"/cameras/{users.camera_a}",
@@ -294,9 +296,7 @@ def test_other_user_cannot_read_update_or_delete_camera(
             json={"name": "Stolen name", "location": "Stolen location"},
         )
     )
-    _assert_camera_hidden(
-        client.delete(f"/cameras/{users.camera_a}", headers=headers)
-    )
+    _assert_camera_hidden(client.delete(f"/cameras/{users.camera_a}", headers=headers))
     assert chain_calls == []
 
 

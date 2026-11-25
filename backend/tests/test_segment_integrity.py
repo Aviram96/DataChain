@@ -24,7 +24,6 @@ from app.services.segment_integrity import (
     sha256_file,
     probe_video_duration_seconds,
 )
-from app.services.segment_staging import keep_staged_until_processing_succeeds
 
 CAMERA_ID = UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 
@@ -162,13 +161,12 @@ def test_integrity_worker_config_for_ingest_gates_then_stages(tmp_path: Path) ->
     assert callable(worker_config.processor)
     assert worker_config.delete_on_success is True
 
+
 def test_probe_video_duration_seconds(tmp_path: Path) -> None:
     path = tmp_path / "video.mp4"
     path.write_bytes(b"test")
 
-    with patch(
-        "app.services.segment_integrity.subprocess.run"
-    ) as mock_run:
+    with patch("app.services.segment_integrity.subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(
             returncode=0,
             stdout="17.280000\n",

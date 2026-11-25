@@ -30,7 +30,11 @@ def is_managed_chunk_path(
     except ValueError:
         return False
     prefix = pattern.split("%")[0]
-    return resolved.is_file() and resolved.name.startswith(prefix) and resolved.suffix == ".mp4"
+    return (
+        resolved.is_file()
+        and resolved.name.startswith(prefix)
+        and resolved.suffix == ".mp4"
+    )
 
 
 def delete_chunk(

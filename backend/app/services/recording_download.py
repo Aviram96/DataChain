@@ -39,9 +39,7 @@ def ipfs_gateway_url(cid: str, *, gateway: str | None = None) -> str:
 
 
 def download_filename(started_at: datetime, ended_at: datetime) -> str:
-    return (
-        f"recordings_{_stamp(started_at)}_{_stamp(ended_at)}.mp4"
-    )
+    return f"recordings_{_stamp(started_at)}_{_stamp(ended_at)}.mp4"
 
 
 def write_concat_list(segment_names: list[str], list_path: Path) -> None:
@@ -49,7 +47,9 @@ def write_concat_list(segment_names: list[str], list_path: Path) -> None:
     list_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def build_concat_copy_command(ffmpeg: str, list_name: str, output_name: str) -> list[str]:
+def build_concat_copy_command(
+    ffmpeg: str, list_name: str, output_name: str
+) -> list[str]:
     return [
         ffmpeg,
         "-y",

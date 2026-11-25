@@ -1,4 +1,3 @@
-
 from datetime import datetime, timezone
 
 import pytest
@@ -14,11 +13,11 @@ from app.services.segment_timeline import (
 )
 
 CAMERA_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+
 def test_read_valid_segment_timeline(tmp_path):
     csv_path = tmp_path / "segments.csv"
-    csv_path.write_text(
-        "camera_20261112T182510Z.mp4,0.000000,25.120000\n"
-    )
+    csv_path.write_text("camera_20261112T182510Z.mp4,0.000000,25.120000\n")
 
     entries = read_segment_timeline(csv_path)
 
@@ -49,12 +48,8 @@ def test_reject_invalid_segment_timeline(tmp_path, content):
 
 
 def test_find_segment_across_csv_files(tmp_path):
-    (tmp_path / "segments_run1.csv").write_text(
-        "first.mp4,0.0,60.0\n"
-    )
-    (tmp_path / "segments_run2.csv").write_text(
-        "second.mp4,0.0,60.0\n"
-    )
+    (tmp_path / "segments_run1.csv").write_text("first.mp4,0.0,60.0\n")
+    (tmp_path / "segments_run2.csv").write_text("second.mp4,0.0,60.0\n")
 
     result = find_segment_timeline(tmp_path, "second.mp4")
 
@@ -65,9 +60,7 @@ def test_find_segment_across_csv_files(tmp_path):
 
 
 def test_find_missing_segment_returns_none(tmp_path):
-    (tmp_path / "segments_run1.csv").write_text(
-        "first.mp4,0.0,60.0\n"
-    )
+    (tmp_path / "segments_run1.csv").write_text("first.mp4,0.0,60.0\n")
 
     result = find_segment_timeline(tmp_path, "missing.mp4")
 
@@ -75,12 +68,8 @@ def test_find_missing_segment_returns_none(tmp_path):
 
 
 def test_duplicate_segment_entries_raise_error(tmp_path):
-    (tmp_path / "segments_run1.csv").write_text(
-        "first.mp4,0.0,60.0\n"
-    )
-    (tmp_path / "segments_run2.csv").write_text(
-        "first.mp4,0.0,60.0\n"
-    )
+    (tmp_path / "segments_run1.csv").write_text("first.mp4,0.0,60.0\n")
+    (tmp_path / "segments_run2.csv").write_text("first.mp4,0.0,60.0\n")
 
     with pytest.raises(ValueError, match="Duplicate timeline entries"):
         find_segment_timeline(tmp_path, "first.mp4")
@@ -88,10 +77,7 @@ def test_duplicate_segment_entries_raise_error(tmp_path):
 
 def test_active_run_ignores_partial_trailing_row(tmp_path):
     csv_path = tmp_path / "segments_run.csv"
-    csv_path.write_bytes(
-        b"first.mp4,0.000000,8.080000\n"
-        b"second.mp4,8.080000,13.080"
-    )
+    csv_path.write_bytes(b"first.mp4,0.000000,8.080000\n" b"second.mp4,8.080000,13.080")
 
     entries = read_segment_timeline(csv_path, run_closed=False)
 
@@ -102,16 +88,14 @@ def test_active_run_ignores_partial_trailing_row(tmp_path):
 
 def test_closed_run_rejects_partial_trailing_row(tmp_path):
     csv_path = tmp_path / "segments_run.csv"
-    csv_path.write_bytes(
-        b"first.mp4,0.000000,8.080000\n"
-        b"second.mp4,8.080000,13.080"
-    )
+    csv_path.write_bytes(b"first.mp4,0.000000,8.080000\n" b"second.mp4,8.080000,13.080")
     mark_segment_run_closed(csv_path)
 
     with pytest.raises(ValueError, match="incomplete row"):
         read_segment_timeline(csv_path, run_closed=True)
     with pytest.raises(ValueError, match="incomplete row"):
         find_segment_timeline(tmp_path, "first.mp4")
+
 
 def test_calculate_continuous_media_ranges():
     first = SegmentTimelineEntry("first.mp4", 0.0, 17.44)
@@ -135,6 +119,7 @@ def test_calculate_continuous_media_ranges():
     assert first_end == pytest.approx(17.44)
     assert second_start == pytest.approx(first_end)
     assert second_end == pytest.approx(27.44)
+
 
 @pytest.mark.parametrize(
     "file_start_time,file_duration,first_segment",
@@ -169,10 +154,7 @@ def test_second_segment_reference_keeps_ranges_contiguous(tmp_path):
     first = _segment_name("20261115T120000Z")
     second = _segment_name("20261115T120008Z")
     csv_path = tmp_path / "segments_run.csv"
-    csv_path.write_text(
-        f"{first},0.000000,8.080000\n"
-        f"{second},8.080000,13.080000\n"
-    )
+    csv_path.write_text(f"{first},0.000000,8.080000\n" f"{second},8.080000,13.080000\n")
 
     first_window = resolve_segment_utc_window(
         tmp_path,
@@ -241,8 +223,7 @@ def test_separate_runs_keep_separate_references(tmp_path):
     run_a = tmp_path / "segments_a.csv"
     run_b = tmp_path / "segments_b.csv"
     run_a.write_text(
-        f"{first_run_a},0.000000,8.080000\n"
-        f"{second_run_a},8.080000,13.080000\n"
+        f"{first_run_a},0.000000,8.080000\n" f"{second_run_a},8.080000,13.080000\n"
     )
     run_b.write_text(f"{only_run_b},0.000000,4.000000\n")
     mark_segment_run_closed(run_b)
@@ -261,9 +242,7 @@ def test_separate_runs_keep_separate_references(tmp_path):
     )
 
     assert from_a.reference_kind == "second_segment"
-    assert from_a.reference_utc == datetime(
-        2026, 11, 15, 12, 0, 8, tzinfo=timezone.utc
-    )
+    assert from_a.reference_utc == datetime(2026, 11, 15, 12, 0, 8, tzinfo=timezone.utc)
     assert from_b.reference_kind == "single_segment"
     assert from_b.started_at == datetime(2026, 11, 15, 13, 0, 0, tzinfo=timezone.utc)
 

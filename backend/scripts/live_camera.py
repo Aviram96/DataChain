@@ -176,13 +176,17 @@ def main() -> int:
         description="Serve a looping video file, or the webcam, as MJPEG.",
     )
     parser.add_argument("--source", help="MP4 to play in real time and repeat")
-    parser.add_argument("--device", help="Webcam name, used only when --source is omitted")
+    parser.add_argument(
+        "--device", help="Webcam name, used only when --source is omitted"
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8090)
     parser.add_argument("--ffmpeg", default="ffmpeg")
     args = parser.parse_args()
     if not args.source and not args.device:
-        logging.error("Pass --source PATH for a simulated camera, or --device NAME for a webcam.")
+        logging.error(
+            "Pass --source PATH for a simulated camera, or --device NAME for a webcam."
+        )
         return 2
 
     hub = FrameHub()

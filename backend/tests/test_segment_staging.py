@@ -99,4 +99,3 @@ def test_ingest_named_segment_deletes_only_after_processing_success(
     assert segment.exists()
     assert worker.process_all_blocking() == 1
     assert not segment.exists()
-

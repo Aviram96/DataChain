@@ -51,9 +51,7 @@ def validate_source_mp4(path: Path) -> None:
     if not path.is_file():
         raise CctvFeedError(f"Source file not found: {path}")
     if path.suffix.lower() != ".mp4":
-        raise CctvFeedError(
-            f"Source must be a .mp4 file (got {path.suffix!r}): {path}"
-        )
+        raise CctvFeedError(f"Source must be a .mp4 file (got {path.suffix!r}): {path}")
 
 
 def build_ffmpeg_loop_command(config: CctvFeedConfig) -> list[str]:
@@ -87,7 +85,8 @@ class CctvFeedSimulator:
         """Start feed, restart FFmpeg on crash, stop cleanly on signal."""
         validate_source_mp4(self._config.source_path)
         logger.info(
-            "Starting CCTV feed simulation from %s (Ctrl+C to stop; auto-restart on crash)",
+            "Starting CCTV feed simulation from %s "
+            "(Ctrl+C to stop; auto-restart on crash)",
             self._config.source_path,
         )
         run_config = FFmpegRunConfig(

@@ -166,14 +166,10 @@ def probe_video_duration_seconds(
             check=False,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        raise SegmentIntegrityError(
-            "Could not determine video duration."
-        ) from exc
+        raise SegmentIntegrityError("Could not determine video duration.") from exc
 
     if completed.returncode != 0:
-        raise SegmentIntegrityError(
-            "Could not determine video duration."
-        )
+        raise SegmentIntegrityError("Could not determine video duration.")
 
     try:
         duration = float(completed.stdout.strip())
@@ -183,9 +179,7 @@ def probe_video_duration_seconds(
         ) from exc
 
     if not (0 < duration < float("inf")):
-        raise SegmentIntegrityError(
-            "Invalid video duration returned by ffprobe."
-        )
+        raise SegmentIntegrityError("Invalid video duration returned by ffprobe.")
 
     return duration
 
@@ -220,9 +214,7 @@ def probe_video_timing(
             check=False,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        raise SegmentIntegrityError(
-            "Could not determine video timing."
-        ) from exc
+        raise SegmentIntegrityError("Could not determine video timing.") from exc
     if completed.returncode != 0:
         raise SegmentIntegrityError("Could not determine video timing.")
 
@@ -251,9 +243,7 @@ def probe_video_timing(
         or start_time == float("inf")
         or not (0 < duration < float("inf"))
     ):
-        raise SegmentTimelinePermanentError(
-            "Invalid video timing returned by ffprobe."
-        )
+        raise SegmentTimelinePermanentError("Invalid video timing returned by ffprobe.")
     return start_time, duration
 
 
@@ -314,9 +304,7 @@ def check_segment(
         )
 
     def _default_probe(candidate: Path) -> bool:
-        return file_has_video_stream(
-            candidate, ffprobe_executable=ffprobe_executable
-        )
+        return file_has_video_stream(candidate, ffprobe_executable=ffprobe_executable)
 
     probe = probe_video if probe_video is not None else _default_probe
     try:

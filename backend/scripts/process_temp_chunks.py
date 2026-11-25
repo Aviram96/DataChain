@@ -44,7 +44,9 @@ def main(argv: list[str] | None = None) -> int:
     temp_dir = resolve_temp_dir(args.temp_dir)
     worker = ChunkProcessingWorker(ChunkProcessingWorkerConfig(temp_dir=temp_dir))
     deleted = worker.process_all_blocking()
-    logging.info("Cleanup complete: removed %d chunk file(s) from %s", deleted, temp_dir)
+    logging.info(
+        "Cleanup complete: removed %d chunk file(s) from %s", deleted, temp_dir
+    )
     return 0
 
 
