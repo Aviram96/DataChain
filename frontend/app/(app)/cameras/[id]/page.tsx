@@ -8,13 +8,16 @@ import { CameraRecordings } from "@/components/camera-recordings";
 import { RequireAuth } from "@/components/require-auth";
 import { useToast } from "@/components/toast-provider";
 import { networkErrorMessage } from "@/lib/api";
+import { cameraEditHref } from "@/lib/edit-return";
 import {
   CamerasApiError,
-  deleteCamera,
+  archiveCamera,
   getCamera,
   ingestFailedMessage,
+  restoreCamera,
   type CameraPublic,
 } from "@/lib/cameras-api";
+import { isArchivedCamera, restoreFailureMessage } from "@/lib/camera-archive";
 import { ui } from "@/lib/ui";
 
 export default function CameraDetailPage() {
@@ -33,9 +36,10 @@ function CameraDetailContent() {
 
   const [camera, setCamera] = useState<CameraPublic | null>(null);
   const [loading, setLoading] = useState(true);
-  const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const [liveFailed, setLiveFailed] = useState(false);
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [confirmingRestore, setConfirmingRestore] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,15 +62,11 @@ function CameraDetailContent() {
     void load();
   }, [load]);
 
-  useEffect(() => {
-    setLiveFailed(false);
-  }, [camera?.stream_url]);
-
-  async function handleDelete() {
-    setDeleting(true);
+  async function handleArchive() {
+    setArchiving(true);
     try {
-      await deleteCamera(cameraId);
-      showToast("Camera removed from your dashboard.", "success");
+      await archiveCamera(cameraId);
+      showToast("Camera archived. New recording has stopped.", "success");
       router.push("/cameras");
     } catch (error) {
       if (error instanceof CamerasApiError) {
@@ -75,7 +75,28 @@ function CameraDetailContent() {
         showToast(networkErrorMessage(), "error");
       }
     } finally {
-      setDeleting(false);
+      setArchiving(false);
+    }
+  }
+
+  async function handleRestore() {
+    setRestoring(true);
+    try {
+      const restored = await restoreCamera(cameraId);
+      setCamera(restored);
+      setConfirmingRestore(false);
+      showToast(
+        "Camera restored successfully. Recording will start automatically when the stream is available.",
+        "success"
+      );
+    } catch (error) {
+      if (error instanceof CamerasApiError) {
+        showToast(restoreFailureMessage(error), "error");
+      } else {
+        showToast(networkErrorMessage(), "error");
+      }
+    } finally {
+      setRestoring(false);
     }
   }
 
@@ -94,66 +115,95 @@ function CameraDetailContent() {
     );
   }
 
+  const archived = isArchivedCamera(camera);
   const online = camera.status === "online";
   const ingestFailed = ingestFailedMessage(camera);
 
-  const feedKind = liveFeedKind(camera.stream_url);
   const details = [
     camera.location?.trim(),
+    archived && camera.archived_at
+      ? `Archived ${new Date(camera.archived_at).toLocaleString()}`
+      : null,
     `Added ${new Date(camera.created_at).toLocaleString()}`,
   ].filter((part): part is string => Boolean(part));
 
   return (
     <div className="space-y-8">
       <div>
-        <Link href="/cameras" className={ui.backLink}>
-          ← Cameras
+        <Link
+          href={archived ? "/cameras/archived" : "/cameras"}
+          className={ui.backLink}
+        >
+          {archived ? "← Archived cameras" : "← Cameras"}
         </Link>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
           <div className="space-y-2">
             <h1 className={ui.pageTitle}>{camera.name}</h1>
             <p className={ui.pageSubtitle}>{details.join(" · ")}</p>
-            <span className={online ? ui.badgeOnline : ui.badgeOffline}>
-              {online ? "Online" : "Offline"}
-            </span>
+            {archived ? (
+              <span className={ui.badgeOffline}>Archived</span>
+            ) : (
+              <span className={online ? ui.badgeOnline : ui.badgeOffline}>
+                {online ? "Online" : "Offline"}
+              </span>
+            )}
             {ingestFailed ? <p className={ui.muted}>{ingestFailed}</p> : null}
           </div>
-          <div className="flex flex-wrap gap-3">
-            <Link href={`/cameras/${camera.id}/edit`} className={ui.btnSecondary}>
-              Edit
-            </Link>
-            {!confirmingDelete ? (
-              <button
-                type="button"
-                onClick={() => setConfirmingDelete(true)}
-                className={ui.btnGhostDanger}
+          {archived ? (
+            <div className="flex flex-wrap gap-3">
+              {!confirmingRestore ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingRestore(true)}
+                  className={ui.btnSecondary}
+                >
+                  Restore
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-3">
+              <Link
+                href={cameraEditHref(camera.id, "details")}
+                className="inline-flex items-center gap-1.5 rounded-sm bg-transparent text-sm font-medium text-landing-ink/80 transition hover:text-landing-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-landing-ink/40"
               >
-                Delete
-              </button>
-            ) : null}
-          </div>
+                <PencilIcon />
+                Edit
+              </Link>
+              {!confirmingArchive ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmingArchive(true)}
+                  className={`inline-flex items-center gap-1.5 ${ui.btnGhostDanger}`}
+                >
+                  <ArchiveIcon />
+                  Archive
+                </button>
+              ) : null}
+            </div>
+          )}
         </div>
       </div>
 
-      {confirmingDelete ? (
+      {confirmingArchive ? (
         <div className={ui.dangerPanel}>
           <p>
-            Remove this camera from your dashboard? Historical recordings stay
-            available for evidence.
+            Archive this camera? New recording stops. Existing recordings stay
+            available, and you can restore the camera later.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={deleting}
-              onClick={() => void handleDelete()}
+              disabled={archiving}
+              onClick={() => void handleArchive()}
               className={ui.btnDanger}
             >
-              {deleting ? "Removing…" : "Remove"}
+              {archiving ? "Archiving…" : "Archive"}
             </button>
             <button
               type="button"
-              disabled={deleting}
-              onClick={() => setConfirmingDelete(false)}
+              disabled={archiving}
+              onClick={() => setConfirmingArchive(false)}
               className={ui.btnSecondary}
             >
               Cancel
@@ -162,65 +212,68 @@ function CameraDetailContent() {
         </div>
       ) : null}
 
-      <section className={ui.panel} aria-labelledby="live-picture-heading">
-        <h2 id="live-picture-heading" className={ui.sectionTitle}>
-          Live
-        </h2>
-        <p className={`mt-1 ${ui.muted}`}>What this camera sees right now.</p>
-        {feedKind === "mjpeg" && !liveFailed ? (
-          <img
-            key={camera.stream_url}
-            src={camera.stream_url}
-            alt="Live camera"
-            onError={() => setLiveFailed(true)}
-            className="mt-3 h-72 w-full rounded-md bg-landing-ink object-contain"
-          />
-        ) : null}
-        {feedKind === "video" && !liveFailed ? (
-          <video
-            key={camera.stream_url}
-            src={camera.stream_url}
-            controls
-            autoPlay
-            muted
-            loop
-            playsInline
-            onError={() => setLiveFailed(true)}
-            className="mt-3 h-72 w-full rounded-md bg-landing-ink object-contain"
-          />
-        ) : null}
-        {feedKind && liveFailed ? (
-          <p className={`mt-3 ${ui.muted}`}>
-            The live picture did not load. Saved clips are still listed below.
+      {confirmingRestore ? (
+        <div className={ui.panel}>
+          <p className="text-sm text-landing-ink">
+            Restore this camera to your active list? It keeps the same
+            recordings. Recording will start automatically when the stream is
+            available.
           </p>
-        ) : null}
-        {!feedKind ? (
-          <p className={`mt-3 ${ui.muted}`}>
-            This stream cannot be shown in the browser. Saved clips are below.
-          </p>
-        ) : null}
-        <p className={`mt-3 break-all ${ui.hint}`}>{camera.stream_url}</p>
-      </section>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={restoring}
+              onClick={() => void handleRestore()}
+              className={ui.btnPrimary}
+            >
+              {restoring ? "Restoring…" : "Restore"}
+            </button>
+            <button
+              type="button"
+              disabled={restoring}
+              onClick={() => setConfirmingRestore(false)}
+              className={ui.btnSecondary}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <CameraRecordings cameraId={camera.id} />
     </div>
   );
 }
 
-function liveFeedKind(url: string): "mjpeg" | "video" | null {
-  try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return null;
-    }
-    if (/\.(mjpg|mjpeg)$/i.test(parsed.pathname)) {
-      return "mjpeg";
-    }
-    if (/\.(mp4|webm|ogg)$/i.test(parsed.pathname)) {
-      return "video";
-    }
-    return null;
-  } catch {
-    return null;
-  }
+function ArchiveIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-3.5 w-3.5 shrink-0 stroke-current"
+      fill="none"
+    >
+      <path d="M2.5 3.2h11v2.2h-11z" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M3.4 5.4h9.2V13H3.4z" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M6.4 8.2h3.2" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function PencilIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-3.5 w-3.5 shrink-0 stroke-current"
+      fill="none"
+    >
+      <path
+        d="M9.2 3.1 12.9 6.8 5.6 14.1H2v-3.6L9.2 3.1z"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <path d="M8 4.3 11.7 8" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
 }

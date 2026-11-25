@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -24,6 +25,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.camera import Camera
 from app.services.camera_stream import (
+    CameraNotFoundForStream,
     CameraStreamError,
     attach_camera_stream,
     get_active_camera,
@@ -63,6 +65,10 @@ from app.services.video_chunker import (
 )
 
 logger = logging.getLogger(__name__)
+
+# How often a running ingest re-reads the camera. Archive and database
+# failures stop FFmpeg on the next check. This does not start cameras.
+ACTIVE_CAMERA_CHECK_SECONDS = 2.0
 
 DEFAULT_INGEST_MAX_RESTARTS = 10
 
@@ -356,18 +362,88 @@ class CameraIngest:
         config: CameraIngestConfig,
         *,
         session_factory: sessionmaker | None = None,
+        install_signal_handlers: bool = True,
+        mark_offline_on_give_up: bool = True,
+        max_restarts: int | None = None,
     ) -> None:
         self._config = config
         self._session_factory = session_factory
+        self._install_signal_handlers = install_signal_handlers
+        self._mark_offline_on_give_up = mark_offline_on_give_up
+        self._max_restarts = max_restarts
         self._supervisor: FFmpegSupervisor | None = None
+        self._inactive_stop = False
+        self._stop_requested = threading.Event()
 
     @property
     def camera_id(self) -> UUID:
         return self._config.camera_id
 
-    def stop(self) -> None:
+    @property
+    def inactive_stop(self) -> bool:
+        """True when this run was stopped because the camera is not active."""
+        return self._inactive_stop
+
+    def stop(self, *, inactive: bool = False) -> None:
+        """Stop FFmpeg. ``inactive`` skips the final publish of open segments."""
+        if inactive:
+            self._inactive_stop = True
+        self._stop_requested.set()
         if self._supervisor is not None:
             self._supervisor.stop()
+
+    def _camera_activity(self) -> Literal["active", "inactive", "unknown"]:
+        """Re-read the camera. Unknown means the active state could not be confirmed."""
+        if self._session_factory is None:
+            return "unknown"
+        db = self._session_factory()
+        try:
+            get_active_camera(db, self._config.camera_id)
+        except CameraNotFoundForStream:
+            return "inactive"
+        except Exception:
+            logger.exception(
+                "Cannot confirm camera %s is still active",
+                self._config.camera_id,
+            )
+            try:
+                db.rollback()
+            except Exception:
+                logger.exception(
+                    "Could not roll back after a failed camera activity check"
+                )
+            return "unknown"
+        else:
+            return "active"
+        finally:
+            db.close()
+
+    def _watch_camera_still_active(self, stop_watching: threading.Event) -> None:
+        """Stop FFmpeg when the camera is archived or its state cannot be read.
+
+        Fail closed: a database error is not treated as permission to keep
+        recording. This loop never starts or resumes ingest.
+        """
+        while not stop_watching.is_set():
+            if stop_watching.wait(ACTIVE_CAMERA_CHECK_SECONDS):
+                return
+            activity = self._camera_activity()
+            if activity == "active":
+                continue
+            self._inactive_stop = True
+            if activity == "inactive":
+                logger.info(
+                    "Stopping ingest for camera %s because it is archived",
+                    self._config.camera_id,
+                )
+            else:
+                logger.error(
+                    "Stopping ingest for camera %s; could not confirm it is "
+                    "still active",
+                    self._config.camera_id,
+                )
+            self.stop()
+            return
 
     def _with_session(self, action: Callable[[Session], None]) -> None:
         if self._session_factory is None:
@@ -386,9 +462,15 @@ class CameraIngest:
 
     def run_until_signal(self) -> int:
         """Receive the stream and write 1-minute MP4 segments until stopped."""
+        if self._stop_requested.is_set():
+            return 0
         chunk_config = chunker_config_for_ingest(self._config)
         ensure_temp_dir(chunk_config.temp_dir)
-        max_restarts = resolve_ingest_max_restarts()
+        max_restarts = (
+            self._max_restarts
+            if self._max_restarts is not None
+            else resolve_ingest_max_restarts()
+        )
         logger.info(
             "Chunking camera %s from %s into %ss segments under %s "
             "(Pinata + chain + DB; delete temp only after success; "
@@ -449,8 +531,11 @@ class CameraIngest:
             popen_kwargs=popen_kwargs,
             on_process_start=note_ffmpeg_started,
             on_process_exit=close_finished_run,
+            install_signal_handlers=self._install_signal_handlers,
         )
         self._supervisor = FFmpegSupervisor(run_config)
+        if self._stop_requested.is_set():
+            self._supervisor.stop()
         worker = ChunkProcessingWorker(
             integrity_worker_config_for_ingest(
                 self._config,
@@ -458,12 +543,34 @@ class CameraIngest:
             )
         )
         worker.start()
+        stop_watching = threading.Event()
+        watcher: threading.Thread | None = None
+        if self._session_factory is not None:
+            watcher = threading.Thread(
+                target=self._watch_camera_still_active,
+                args=(stop_watching,),
+                name=f"ingest-active-{self._config.camera_id}",
+                daemon=True,
+            )
+            watcher.start()
         try:
             code = self._supervisor.run_until_signal()
-            if self._supervisor.gave_up_after_restarts:
-                self._with_session(
-                    lambda db: mark_ingest_offline(db, self._config.camera_id)
+            if self._inactive_stop:
+                logger.info(
+                    "Ingest for camera %s stopped without marking capture offline",
+                    self._config.camera_id,
                 )
+            elif self._supervisor.gave_up_after_restarts:
+                if self._mark_offline_on_give_up:
+                    self._with_session(
+                        lambda db: mark_ingest_offline(db, self._config.camera_id)
+                    )
+                else:
+                    logger.warning(
+                        "FFmpeg stopped for camera %s; leaving ingest-offline unset "
+                        "so recording can retry",
+                        self._config.camera_id,
+                    )
             elif self._supervisor.restart_count:
                 logger.info(
                     "FFmpeg restarted %s time(s) for camera %s",
@@ -472,4 +579,10 @@ class CameraIngest:
                 )
             return code
         finally:
-            worker.stop(flush=True)
+            stop_watching.set()
+            if watcher is not None:
+                watcher.join(timeout=5)
+            # Skip the final publish pass after an archive or failed activity
+            # check. A segment already inside upload or anchor can still finish;
+            # publishing_allowed refuses a new upload or anchor before those calls.
+            worker.stop(flush=not self._inactive_stop)

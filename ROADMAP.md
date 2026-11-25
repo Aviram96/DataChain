@@ -66,7 +66,7 @@ Keep the **Status** column in this table aligned with the repository as work lan
 | US-3.5 | As a user, I want a UI error toast when I try to register with an email that is already in use. | Done — `/register` in `frontend/`; error toast on HTTP 409; CORS for dev in `backend/app/main.py` |
 | US-3.6 | As the system, I need to detect JWT expiration on the client before protected requests fail silently. | Done — `frontend/lib/auth-token.ts`, `auth-session.ts`; client reads JWT `exp` on load |
 | US-3.7 | As the system, I need to log the user out and redirect to login when the session is expired or invalid. | Done — `frontend/lib/auth-fetch.ts`; 401 clears token and redirects to `/login` with optional toast |
-| US-3.8 | As a user, I want to log out securely and clear my session.            | Done — `AuthProvider` + `SiteHeader` (`Signed in as …`, Log out); `logout()` clears token and expiry timer; login calls `refreshSession()` for header state |
+| US-3.8 | As a user, I want to log out securely and clear my session.            | Done — `AuthProvider` + `SiteHeader` account menu (email, Log out); `logout()` clears token and expiry timer; login calls `refreshSession()` for header state |
 
 
 **Exit criteria**: Registration, login, logout, and protected routes behave per stories; secrets not logged.
@@ -95,7 +95,7 @@ Keep the **Status** column in this table aligned with the repository as work lan
 
 **Exit criteria**: Full CRUD via API + UI; pagination and status indicators implemented per agreed rules (e.g., ping vs last-seen).
 
-**Progress note**: **US-4.1–US-4.9** complete on branch `epic4`. Epic 4 exit criteria met for CRUD API + UI, pagination, and online/offline indicators.
+**Progress note**: **US-4.1–US-4.9** complete on branch `epic4`. Epic 4 exit criteria met for CRUD API + UI, pagination, and online/offline indicators. Archive keeps a camera and its recordings. Restore returns that camera to the active list. Permanent deletion (`POST /cameras/{id}/permanent-delete`) removes only an archived camera that has no recordings and no verification history. The Archived Cameras page confirms with Cancel / Delete and sends the stored camera name. Cameras that still have saved data are rejected. No extra database migration is required for this behavior.
 
 ---
 
@@ -188,7 +188,7 @@ Keep the **Status** column in this table aligned with the repository as work lan
 
 **Exit criteria**: Verification path documented (RPC provider, contract ABI, network ID); mismatches explained in UI without leaking secrets.
 
-**Progress note**: Slice E3 (2026-09-17) delivers camera-scoped Verify on `/cameras/[id]`: ethers.js `getSegment` vs API CID/hash/times, expected-minute gaps, Verified/Tampered/Missing/Failed to verify badges, Polygonscan links. RPC is proxied at `/amoy-rpc`. Slice E6 persists each attempt (full / part / per-minute) after the browser report; the API does not re-read the chain. A global video dashboard Verify button (US-8.1) is not added. Watch verifies each segment on the server before playback (PostgreSQL, `getSegment`, and the IPFS file hash) and plays only a verified file. The manual Verify button remains the browser range check. Download uses the same server check and returns only verified portions, together with a report of gaps and segments that were left out. Nothing is saved when no segment is verified. Statuses are Verified, Tampered, Missing, Unavailable, and Failed.
+**Progress note**: The camera page no longer has a manual Verify button, a browser `getSegment` read, or a verification-history list. Watch verifies each segment on the server before playback (PostgreSQL, `getSegment`, and the IPFS file hash) and plays only a verified file. A segment that is Tampered, Missing, Unavailable, or Failed is not played, and the player shows that result. Download uses the same server check and saves only verified portions. Nothing is saved when no segment is verified. Each playback or download verification also writes one `verification_attempts` row and per-segment minute rows. Older client-submitted rows remain. The camera page does not display that history. A global video dashboard Verify button (US-8.1) is not added.
 
 ---
 
@@ -245,15 +245,19 @@ Epics **1–10** above remain historical delivery notes for the original roadmap
 | A | Register and Login | Done — all CP-A stories Implemented (see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`) |
 | B | Camera dashboard management | Done — all CP-B stories Implemented (search/filter/sort, soft delete, unique names, detail page) |
 | C | Video processing pipeline | Done — CP-C.P1–P8 and CP-C.C1 Implemented |
-| D | IPFS storage and blockchain anchoring | Done — CP-D.P1–P9 Implemented; CP-D.C1 Implemented (experienced via E3 verify UI) |
+| D | IPFS storage and blockchain anchoring | Done — CP-D.P1–P9 Implemented; CP-D.C1 Implemented (experienced when Watch or Download verifies each segment on the server) |
 | E | Video management and verification | Done — E1–E6 (search, Watch, verify full/part, download as one file, verification audit trail); CP-E.P11 Deferred |
 
 
 **Exit criteria**: Every story in `docs/CLIENT_PROGRAMMER_USER_STORIES.md` is Implemented, Deferred (with reason), or explicitly Declined; open decisions in that file are resolved.
 
-**Progress note**: Slice A complete 2026-07-21 (including landing refinement: toolbar-free home, problem/solution, signed-in → `/cameras`). Slice B complete 2026-07-21 — apply Alembic revision `20260721_000002` for `deleted_at` + unique active name. Slice C complete 2026-09-09 — **CP-C.P1–P8** (simulate feed, receive stream, 1-minute chunks, camera+time filenames, pre-stage integrity check, stage under `temp/` until processing succeeds, delete temp files only after processing success, capped FFmpeg restart + ingest offline) and **CP-C.C1** (`offline_reason` `ingest_failed` vs `unreachable`; `ingest_offline_at` on the API so the card/detail can say **since** capture stopped); apply Alembic `20260824_000003` for `ingest_offline_at`; see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`. Slice D started 2026-09-14; ingest Pinata + chain + DB wired 2026-09-15 (`ingest_segment_processor.py`). **CP-D.P1–P9** Implemented as of 2026-09-17; **CP-D.C1** Implemented via E3 verify UI (2026-09-17). Slice E: E1 recordings search, including the 10 newest clips and a day timeline; E2 continuous Watch after per-segment backend verification; E3 full-range verify (ethers.js `getSegment`); E4 partial-range verify; E5 download of verified portions as one MP4; E6 persist verification attempts (`POST/GET /cameras/{id}/verification-attempts`, Alembic `20260917_000005`). Download verifies overlapping segments with `verify_recording_range` and assembles only verified files (2026-11-16). A partial result is discontinuous: the file is the verified portions in order, and the report lists gaps and excluded segments. **CP-E.P11** remains Deferred.
+**Progress note**: Slice A complete 2026-07-21 (including landing refinement: toolbar-free home, problem/solution, signed-in → `/cameras`). Slice B complete 2026-07-21 — apply Alembic revision `20260721_000002` for `deleted_at` + unique active name. Slice C complete 2026-09-09 — **CP-C.P1–P8** (simulate feed, receive stream, 1-minute chunks, camera+time filenames, pre-stage integrity check, stage under `temp/` until processing succeeds, delete temp files only after processing success, capped FFmpeg restart + ingest offline) and **CP-C.C1** (`offline_reason` `ingest_failed` vs `unreachable`; `ingest_offline_at` on the API so the card/detail can say **since** capture stopped); apply Alembic `20260824_000003` for `ingest_offline_at`; see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`. Slice D started 2026-09-14; ingest Pinata + chain + DB wired 2026-09-15 (`ingest_segment_processor.py`). **CP-D.P1–P9** Implemented as of 2026-09-17; **CP-D.C1** is experienced when Watch or Download verifies each segment on the server. The manual Verify button and verification-history list have been removed from the camera page. Slice E: E1 recordings search, including the 10 newest clips and a day timeline; E2 continuous Watch after per-segment backend verification; E5 download of verified portions as one MP4. The earlier browser Verify flow (E3/E4) and the on-page verification-history list (E6) have been removed. The attempt API and Alembic revision `20260917_000005` remain. Download verifies overlapping segments with `verify_recording_range` and assembles only verified files (2026-11-16). A partial result is discontinuous: the file is the verified portions in order, and the report lists gaps and excluded segments. **CP-E.P11** remains Deferred. Backend archive and restore (2026-11-18) reuses `deleted_at`: owner archive/restore routes, an archived list, owner playback and download, and a fail-closed ingest stop. The Cameras UI still says Delete; no development camera rows were restored in that slice. Automatic recording (2026-11-18) is a separate `scripts/ingest_camera.py --supervise` process: it discovers active and restored cameras, stops archived ones, retries an unreachable RTSP source with backoff, and holds a PostgreSQL advisory lock per camera. The API does not start it. Run it with `cd backend` and `.venv/bin/python scripts/ingest_camera.py --supervise`. Online/Offline on the dashboard is stream reachability, not proof that a segment is being recorded.
 
 ---
+
+## Future work
+
+Permanent deletion of cameras containing historical recordings, including safe removal of database records, IPFS pin management, shared-CID protection, and failure recovery.
 
 ## Suggested milestone grouping
 

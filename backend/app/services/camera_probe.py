@@ -1,8 +1,8 @@
 """Reachability probe for camera stream URLs (Slice B / CP-B.P4).
 
-Status is ``online`` when the stream endpoint responds at the protocol layer
-(HTTP/HTTPS request, or RTSP OPTIONS / TCP fallback), not merely when a
-generic host ping succeeds without a stream scheme check.
+HTTP and HTTPS stay reachable when the URL answers. RTSP is online only when
+DESCRIBE of the full configured URL, including its path, returns RTSP/1.0 200.
+An open port or an OPTIONS response is not enough.
 """
 
 from __future__ import annotations
@@ -34,14 +34,6 @@ def resolve_stream_host_port(stream_url: str) -> tuple[str, int] | None:
         return None
     port = parsed.port if parsed.port is not None else DEFAULT_PORTS[scheme]
     return host, port
-
-
-def _tcp_reachable(host: str, port: int, timeout: float) -> bool:
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
-    except OSError:
-        return False
 
 
 def _http_stream_reachable(stream_url: str, timeout: float) -> bool:
@@ -77,28 +69,48 @@ def _http_stream_reachable(stream_url: str, timeout: float) -> bool:
             return False
 
 
-def _rtsp_stream_reachable(host: str, port: int, timeout: float) -> bool:
-    """Send a minimal RTSP OPTIONS request; fall back to TCP if the peer is silent."""
-    if not _tcp_reachable(host, port, timeout):
+def _rtsp_status_is_ok(data: bytes) -> bool:
+    """True only for a complete ``RTSP/1.0 200`` status line."""
+    if not data:
         return False
+    line = data.split(b"\r\n", 1)[0].split(b"\n", 1)[0].strip()
     try:
+        text = line.decode("ascii")
+    except UnicodeDecodeError:
+        return False
+    parts = text.split()
+    return len(parts) >= 2 and parts[0] == "RTSP/1.0" and parts[1] == "200"
+
+
+def _read_rtsp_status(sock: socket.socket) -> bytes:
+    """Read the status line. A timeout or closed socket returns what arrived."""
+    data = b""
+    while b"\r\n" not in data and b"\n" not in data and len(data) < 512:
+        chunk = sock.recv(512 - len(data))
+        if not chunk:
+            break
+        data += chunk
+    return data
+
+
+def _rtsp_stream_reachable(
+    stream_url: str, host: str, port: int, timeout: float
+) -> bool:
+    """DESCRIBE the configured URL. Only RTSP/1.0 200 means the stream is up."""
+    try:
+        payload = (
+            f"DESCRIBE {stream_url} RTSP/1.0\r\n"
+            f"CSeq: 1\r\n"
+            f"User-Agent: DatachainCameraProbe/1.0\r\n"
+            f"Accept: application/sdp\r\n"
+            f"\r\n"
+        ).encode("ascii")
         with socket.create_connection((host, port), timeout=timeout) as sock:
             sock.settimeout(timeout)
-            # RTSP/1.0 OPTIONS is enough to prove a stream service is listening.
-            payload = (
-                f"OPTIONS rtsp://{host}:{port}/ RTSP/1.0\r\n"
-                f"CSeq: 1\r\n"
-                f"User-Agent: DatachainCameraProbe/1.0\r\n"
-                f"\r\n"
-            ).encode("ascii")
             sock.sendall(payload)
-            data = sock.recv(64)
-            if data:
-                return True
-    except OSError:
-        pass
-    # TCP connected earlier; treat open RTSP port as reachable stream endpoint.
-    return True
+            return _rtsp_status_is_ok(_read_rtsp_status(sock))
+    except (OSError, TimeoutError, UnicodeError):
+        return False
 
 
 def probe_stream_reachable(
@@ -117,7 +129,7 @@ def probe_stream_reachable(
     if scheme in ("http", "https"):
         return _http_stream_reachable(stream_url, seconds)
     if scheme == "rtsp":
-        return _rtsp_stream_reachable(host, port, seconds)
+        return _rtsp_stream_reachable(stream_url, host, port, seconds)
     return False
 
 

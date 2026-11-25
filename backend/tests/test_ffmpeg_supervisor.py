@@ -19,10 +19,37 @@ def test_resolve_restart_settings_defaults(monkeypatch) -> None:
     assert resolve_max_restarts() is None
 
 
+def test_embedded_run_does_not_install_signal_handlers() -> None:
+    process = MagicMock(
+        wait=MagicMock(return_value=0),
+        stderr=None,
+        poll=MagicMock(return_value=0),
+        pid=1,
+    )
+    config = FFmpegRunConfig(
+        build_command=lambda: ["ffmpeg", "-version"],
+        restart_on_crash=False,
+        install_signal_handlers=False,
+    )
+    with (
+        patch("app.services.ffmpeg_supervisor.signal.signal") as install,
+        patch(
+            "app.services.ffmpeg_supervisor.subprocess.Popen",
+            return_value=process,
+        ),
+    ):
+        assert FFmpegSupervisor(config).run_until_signal() == 0
+    install.assert_not_called()
+
+
 def test_supervisor_restarts_after_crash() -> None:
     processes = [
-        MagicMock(wait=MagicMock(return_value=1), stderr=None, poll=MagicMock(return_value=1)),
-        MagicMock(wait=MagicMock(return_value=0), stderr=None, poll=MagicMock(return_value=0)),
+        MagicMock(
+            wait=MagicMock(return_value=1), stderr=None, poll=MagicMock(return_value=1)
+        ),
+        MagicMock(
+            wait=MagicMock(return_value=0), stderr=None, poll=MagicMock(return_value=0)
+        ),
     ]
     build_count = {"n": 0}
 
@@ -37,7 +64,9 @@ def test_supervisor_restarts_after_crash() -> None:
     )
     supervisor = FFmpegSupervisor(config)
 
-    with patch("app.services.ffmpeg_supervisor.subprocess.Popen", side_effect=processes):
+    with patch(
+        "app.services.ffmpeg_supervisor.subprocess.Popen", side_effect=processes
+    ):
         code = supervisor.run_until_signal()
 
     assert code == 0
@@ -46,7 +75,9 @@ def test_supervisor_restarts_after_crash() -> None:
 
 
 def test_supervisor_does_not_restart_on_success() -> None:
-    proc = MagicMock(wait=MagicMock(return_value=0), stderr=None, poll=MagicMock(return_value=0))
+    proc = MagicMock(
+        wait=MagicMock(return_value=0), stderr=None, poll=MagicMock(return_value=0)
+    )
     build_count = {"n": 0}
 
     def build_command() -> list[str]:
@@ -66,7 +97,9 @@ def test_supervisor_does_not_restart_on_success() -> None:
 
 
 def test_supervisor_respects_max_restarts() -> None:
-    proc = MagicMock(wait=MagicMock(return_value=1), stderr=None, poll=MagicMock(return_value=1))
+    proc = MagicMock(
+        wait=MagicMock(return_value=1), stderr=None, poll=MagicMock(return_value=1)
+    )
     config = FFmpegRunConfig(
         build_command=lambda: ["ffmpeg"],
         restart_on_crash=True,
@@ -81,6 +114,7 @@ def test_supervisor_respects_max_restarts() -> None:
     assert code == 1
     assert supervisor.restart_count == 2
     assert supervisor.gave_up_after_restarts is True
+
 
 def test_signal_handler_does_not_wait_twice() -> None:
     import signal
@@ -120,8 +154,6 @@ def test_signal_handler_does_not_wait_twice() -> None:
 
 
 def test_supervisor_graceful_stop_sends_q() -> None:
-    import io
-
     proc = MagicMock()
     proc.poll.return_value = None
     proc.stdin = MagicMock()
@@ -139,6 +171,7 @@ def test_supervisor_graceful_stop_sends_q() -> None:
 
     proc.stdin.write.assert_called_once_with(b"q\n")
     proc.stdin.flush.assert_called_once()
+
 
 def test_supervisor_forces_termination_after_graceful_timeout() -> None:
     import subprocess
@@ -176,6 +209,7 @@ def test_supervisor_forces_termination_after_graceful_timeout() -> None:
     proc.stdin.write.assert_called_once_with(b"q\n")
     proc.terminate.assert_called_once()
     assert proc.wait.call_count == 2
+
 
 def test_supervisor_timeout_after_signal() -> None:
     import signal
@@ -227,6 +261,7 @@ def test_supervisor_timeout_after_signal() -> None:
     proc.stdin.write.assert_called_once_with(b"q\n")
     proc.terminate.assert_called_once()
     assert supervisor.restart_count == 0
+
 
 def test_exit_hook_runs_once_per_process_after_crash_and_restart() -> None:
     crashed = MagicMock(
@@ -308,9 +343,7 @@ def test_supervisor_reads_stderr_lines(caplog) -> None:
     import logging
 
     proc = MagicMock()
-    proc.stderr = io.BytesIO(
-        b"First FFmpeg warning\nSecond FFmpeg warning\n"
-    )
+    proc.stderr = io.BytesIO(b"First FFmpeg warning\nSecond FFmpeg warning\n")
 
     with caplog.at_level(logging.WARNING):
         FFmpegSupervisor._log_stderr(proc)

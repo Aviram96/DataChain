@@ -1,7 +1,9 @@
-"""Verification attempt audit trail (Slice E / CP-E.P8).
+"""Verification attempt audit trail.
 
-Rows are the in-browser report (ethers.js vs API). The API stores what the
-client already classified; it does not re-read the chain.
+Client reports still arrive through ``POST /cameras/{id}/verification-attempts``.
+Playback and download write one row from the server verification result.
+``operation`` is ``playback`` or ``download`` for those rows, and null for a
+client-submitted report.
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ class VerificationAttempt(Base):
         sa.DateTime(timezone=True), nullable=False
     )
     scope: Mapped[str] = mapped_column(sa.String(16), nullable=False)
+    operation: Mapped[str | None] = mapped_column(sa.String(16), nullable=True)
     overall_status: Mapped[str] = mapped_column(sa.String(32), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True),

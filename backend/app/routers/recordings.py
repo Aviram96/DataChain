@@ -6,12 +6,13 @@ import json
 import math
 import shutil
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID, uuid4
 
 import anyio
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, JSONResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -33,6 +34,12 @@ from app.schemas.recording import (
     VideoRecordListResponse,
     VideoRecordPublic,
 )
+from app.services.playback_timing import (
+    finish_playback_timing,
+    log_playback_step,
+    playback_timing_id,
+    start_playback_timing,
+)
 from app.services.recording_download import (
     MAX_DOWNLOAD_SEGMENTS,
     RecordingDownloadError,
@@ -44,6 +51,7 @@ from app.services.recording_verification import (
     RecordingVerificationError,
     verify_recording_range,
 )
+from app.services.verification_audit import save_verification_audit
 from app.services.video_chunker import resolve_temp_dir
 
 router = APIRouter()
@@ -58,16 +66,20 @@ def _as_utc(moment: datetime) -> datetime:
     return moment.astimezone(timezone.utc)
 
 
-def _get_owned_active_camera(
+def _get_owned_camera(
     camera_id: UUID,
     current_user: User,
     db: Session,
 ) -> Camera:
+    """Owner may read recordings for an active or archived camera.
+
+    Other users receive 404. Archiving does not make the camera editable or
+    eligible for ingest; those routes keep their own active-only checks.
+    """
     camera = db.execute(
         select(Camera).where(
             Camera.id == camera_id,
             Camera.user_id == current_user.id,
-            Camera.deleted_at.is_(None),
         )
     ).scalar_one_or_none()
     if camera is None:
@@ -162,9 +174,7 @@ class _VerifiedDownloadResponse(Response):
     ) -> None:
         self._video_path = video_path
         self._report_bytes = json.dumps(report_json).encode()
-        self._filename = (
-            filename.replace('"', "").replace("\r", "").replace("\n", "")
-        )
+        self._filename = filename.replace('"', "").replace("\r", "").replace("\n", "")
         self._cleanup_dir = cleanup_dir
         self._boundary = f"datachain{uuid4().hex}"
         super().__init__(
@@ -257,7 +267,7 @@ def list_recordings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> VideoRecordListResponse:
-    _get_owned_active_camera(camera_id, current_user, db)
+    _get_owned_camera(camera_id, current_user, db)
     window_start, window_end = _window_or_400(started_at, ended_at)
     filters = _recording_filters(camera_id, window_start, window_end)
 
@@ -301,7 +311,7 @@ def download_recordings(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """Verify every overlapping segment, then serve only verified files."""
-    _get_owned_active_camera(camera_id, current_user, db)
+    _get_owned_camera(camera_id, current_user, db)
     window_start, window_end = _window_or_400(started_at, ended_at)
     assert window_start is not None and window_end is not None
     filters = _recording_filters(camera_id, window_start, window_end)
@@ -333,11 +343,17 @@ def download_recordings(
         _cleanup_dir(str(work_dir))
         raise
 
-    safe = [
-        item
-        for item in report.eligible
-        if _file_stays_in_dir(item.path, work_dir)
-    ]
+    save_verification_audit(
+        db,
+        user_id=current_user.id,
+        camera_id=camera_id,
+        started_at=window_start,
+        ended_at=window_end,
+        operation="download",
+        report=report,
+    )
+
+    safe = [item for item in report.eligible if _file_stays_in_dir(item.path, work_dir)]
     if len(safe) != len(report.eligible):
         _cleanup_dir(str(work_dir))
         raise HTTPException(
@@ -391,61 +407,89 @@ def download_recordings(
 def play_recording(
     camera_id: UUID,
     record_id: UUID,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> _CleanupFileResponse | JSONResponse:
     """Verify one owned segment, then stream it. Failures return JSON, not media."""
-    _get_owned_active_camera(camera_id, current_user, db)
-    record = db.execute(
-        select(VideoRecord).where(
-            VideoRecord.id == record_id,
-            VideoRecord.camera_id == camera_id,
-        )
-    ).scalar_one_or_none()
-    if record is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Recording not found.",
-        )
-
-    work_dir = _playback_work_dir()
+    timing_token = start_playback_timing(
+        playback_timing_id(request.headers.get("x-playback-timing-id"))
+    )
+    outcome = "error"
     try:
-        report = verify_recording_range(
+        lookup_started = time.perf_counter()
+        _get_owned_camera(camera_id, current_user, db)
+        record = db.execute(
+            select(VideoRecord).where(
+                VideoRecord.id == record_id,
+                VideoRecord.camera_id == camera_id,
+            )
+        ).scalar_one_or_none()
+        log_playback_step(
+            "database_lookup",
+            lookup_started,
+            found=record is not None,
+        )
+        if record is None:
+            outcome = "not_found"
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Recording not found.",
+            )
+
+        work_dir = _playback_work_dir()
+        try:
+            report = verify_recording_range(
+                db,
+                camera_id,
+                record.started_at,
+                record.ended_at,
+                work_dir=work_dir,
+            )
+        except RecordingVerificationError as exc:
+            _cleanup_dir(str(work_dir))
+            outcome = "rejected"
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=exc.detail,
+            ) from exc
+        except Exception:
+            _cleanup_dir(str(work_dir))
+            raise
+
+        save_verification_audit(
             db,
-            camera_id,
-            record.started_at,
-            record.ended_at,
-            work_dir=work_dir,
-        )
-    except RecordingVerificationError as exc:
-        _cleanup_dir(str(work_dir))
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=exc.detail,
-        ) from exc
-    except Exception:
-        _cleanup_dir(str(work_dir))
-        raise
-
-    playable = next(
-        (item for item in report.eligible if item.video_record_id == record.id),
-        None,
-    )
-    if playable is not None and _file_stays_in_dir(playable.path, work_dir):
-        return _CleanupFileResponse(
-            path=playable.path,
-            media_type="video/mp4",
-            filename=download_filename(record.started_at, record.ended_at),
-            content_disposition_type="inline",
-            cleanup_dir=str(work_dir),
+            user_id=current_user.id,
+            camera_id=camera_id,
+            started_at=record.started_at,
+            ended_at=record.ended_at,
+            operation="playback",
+            report=report,
         )
 
-    denial = _playback_denial(report, record.id)
-    _cleanup_dir(str(work_dir))
-    return JSONResponse(
-        status_code=status.HTTP_409_CONFLICT,
-        content=denial.model_dump(mode="json"),
-    )
+        playable = next(
+            (item for item in report.eligible if item.video_record_id == record.id),
+            None,
+        )
+        if playable is not None and _file_stays_in_dir(playable.path, work_dir):
+            outcome = "ready"
+            return _CleanupFileResponse(
+                path=playable.path,
+                media_type="video/mp4",
+                filename=download_filename(record.started_at, record.ended_at),
+                content_disposition_type="inline",
+                cleanup_dir=str(work_dir),
+            )
+
+        denial = _playback_denial(report, record.id)
+        _cleanup_dir(str(work_dir))
+        outcome = "denied"
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content=denial.model_dump(mode="json"),
+        )
+    finally:
+        finish_playback_timing(timing_token, outcome=outcome)
 
 
 def _file_stays_in_dir(path: Path, work_dir: Path) -> bool:

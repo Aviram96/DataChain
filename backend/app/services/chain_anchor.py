@@ -40,9 +40,19 @@ logger = logging.getLogger(__name__)
 SendOnce = Callable[["SegmentAnchorRequest"], str]
 CallOnce = Callable[[UUID, datetime], "SegmentAnchor"]
 
+# First 4 bytes of keccak256("AnchorNotFound()"). No arguments follow.
+_ANCHOR_NOT_FOUND_SELECTOR = "0x46716752"
+
 
 class ChainAnchorError(Exception):
     """Anchor write or on-chain read failed."""
+
+
+class ChainAnchorNotFoundError(ChainAnchorError):
+    """The chain has no anchor for this camera and start time."""
+
+    def __init__(self) -> None:
+        super().__init__("AnchorNotFound")
 
 
 @dataclass(frozen=True)
@@ -115,7 +125,7 @@ def decode_segment_anchor(raw: object) -> SegmentAnchor:
     hash_raw = _anchor_field(raw, 4, "segmentHash", "segment_hash")
     cid = str(cid_raw).strip()
     if not cid:
-        raise ChainAnchorError("AnchorNotFound")
+        raise ChainAnchorNotFoundError()
     return SegmentAnchor(
         camera_id=bytes16_to_camera_id(camera_raw),
         started_at=datetime.fromtimestamp(int(started_raw), tz=timezone.utc),
@@ -184,9 +194,7 @@ def anchor_segment(
     Does not delete files or write PostgreSQL. After failed retries, raises
     ``ChainAnchorError`` so the segment can stay in ``temp/``.
     """
-    attempts = (
-        max_attempts if max_attempts is not None else get_anchor_max_attempts()
-    )
+    attempts = max_attempts if max_attempts is not None else get_anchor_max_attempts()
     delay = (
         retry_delay_seconds
         if retry_delay_seconds is not None
@@ -248,6 +256,13 @@ def get_segment(
     except ChainAnchorError:
         raise
     except Exception as exc:
+        if _is_anchor_not_found_revert(exc):
+            logger.info(
+                "No on-chain anchor for camera %s start %s",
+                camera_id,
+                started_at.isoformat(),
+            )
+            raise ChainAnchorNotFoundError() from exc
         logger.error(
             "On-chain segment read failed for camera %s start %s: %s",
             camera_id,
@@ -262,6 +277,49 @@ def get_segment(
         anchored.cid,
     )
     return anchored
+
+
+def _is_anchor_not_found_revert(exc: BaseException) -> bool:
+    """True only when revert data is exactly the AnchorNotFound() selector."""
+    data = getattr(exc, "data", None)
+    if data is None:
+        return False
+    return any(
+        payload == _ANCHOR_NOT_FOUND_SELECTOR for payload in _revert_payloads(data)
+    )
+
+
+def _revert_payloads(value: object) -> list[str]:
+    if isinstance(value, str):
+        normalized = _normalize_revert_hex(value)
+        return [normalized] if normalized is not None else []
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return ["0x" + bytes(value).hex()]
+    if isinstance(value, dict):
+        payloads: list[str] = []
+        for item in value.values():
+            payloads.extend(_revert_payloads(item))
+        return payloads
+    if isinstance(value, (list, tuple)):
+        payloads = []
+        for item in value:
+            payloads.extend(_revert_payloads(item))
+        return payloads
+    return []
+
+
+def _normalize_revert_hex(value: str) -> str | None:
+    text = value.strip().lower()
+    if not text.startswith("0x"):
+        return None
+    body = text[2:]
+    if len(body) == 0 or len(body) % 2 != 0:
+        return None
+    try:
+        bytes.fromhex(body)
+    except ValueError:
+        return None
+    return "0x" + body
 
 
 def _connected_web3() -> tuple[Web3, float]:
@@ -326,9 +384,7 @@ def _send_anchor_once(request: SegmentAnchorRequest) -> str:
     receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=int(timeout))
     status = int(receipt["status"])
     if status != 1:
-        raise RuntimeError(
-            "anchor transaction failed (status 0; possible gas issue)"
-        )
+        raise RuntimeError("anchor transaction failed (status 0; possible gas issue)")
     hex_hash = tx_hash.hex() if hasattr(tx_hash, "hex") else str(tx_hash)
     if not hex_hash.startswith("0x"):
         hex_hash = f"0x{hex_hash}"

@@ -7,13 +7,17 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base
 from app.deps import get_db
 from app.main import app
+from app.models.verification_attempt import (
+    VerificationAttempt,
+    VerificationAttemptMinute,
+)
 from app.models.video_record import VideoRecord
 
 import app.models as _models  # noqa: F401
@@ -328,6 +332,125 @@ def test_list_attempts_newest_first(client: TestClient) -> None:
     )
     assert page_two.status_code == 200
     assert page_two.json()["items"][0]["id"] == first.json()["id"]
+
+
+def _attempt_count(db: Session) -> int:
+    return db.execute(
+        select(func.count()).select_from(VerificationAttempt)
+    ).scalar_one()
+
+
+def _minute_count(db: Session) -> int:
+    return db.execute(
+        select(func.count()).select_from(VerificationAttemptMinute)
+    ).scalar_one()
+
+
+def _record_count(db: Session) -> int:
+    return db.execute(select(func.count()).select_from(VideoRecord)).scalar_one()
+
+
+def test_rejected_recording_ids_are_not_stored(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    token_a = _register_and_token(client, "owner-a@example.com")
+    token_b = _register_and_token(client, "owner-b@example.com")
+    camera_a = _create_camera(client, token_a, "Alpha one")
+    camera_a_other = _create_camera(client, token_a, "Alpha two")
+    camera_b = _create_camera(client, token_b, "Beta one")
+    record_a = _add_segment(db_session, camera_a, NOON)
+    record_a_other = _add_segment(
+        db_session,
+        camera_a_other,
+        NOON + timedelta(minutes=1),
+        cid="bafybeih" + "a" * 50,
+    )
+    record_b = _add_segment(
+        db_session,
+        camera_b,
+        NOON + timedelta(minutes=2),
+        cid="bafybeih" + "b" * 50,
+    )
+    records_before = _record_count(db_session)
+    missing_id = str(uuid4())
+    rejected_ids = [
+        str(record_a_other.id),
+        str(record_b.id),
+        missing_id,
+    ]
+
+    responses = [
+        client.post(
+            f"/cameras/{camera_a}/verification-attempts",
+            headers=_auth_headers(token_a),
+            json=_attempt_payload(record_id=record_id, scope="minute"),
+        )
+        for record_id in rejected_ids
+    ]
+    for response in responses:
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Recording not found."}
+    assert responses[0].json() == responses[1].json() == responses[2].json()
+
+    mixed = _attempt_payload(record_id=str(record_a.id), scope="minute")
+    mixed["minutes"].append(
+        {
+            "started_at": "2026-08-24T12:01:00Z",
+            "status": "missing",
+            "detail": "No recording covers this minute.",
+            "video_record_id": str(record_b.id),
+        }
+    )
+    mixed["ended_at"] = "2026-08-24T12:02:00Z"
+    mixed_response = client.post(
+        f"/cameras/{camera_a}/verification-attempts",
+        headers=_auth_headers(token_a),
+        json=mixed,
+    )
+    assert mixed_response.status_code == 404
+    assert mixed_response.json() == {"detail": "Recording not found."}
+
+    other_camera = client.post(
+        f"/cameras/{camera_a}/verification-attempts",
+        headers=_auth_headers(token_b),
+        json=_attempt_payload(record_id=str(record_a.id), scope="minute"),
+    )
+    assert other_camera.status_code == 404
+    assert other_camera.json() == {"detail": "Camera not found."}
+
+    assert _attempt_count(db_session) == 0
+    assert _minute_count(db_session) == 0
+    assert _record_count(db_session) == records_before
+
+    omitted = _attempt_payload(scope="full")
+    del omitted["minutes"][0]["video_record_id"]
+    without_id = client.post(
+        f"/cameras/{camera_a}/verification-attempts",
+        headers=_auth_headers(token_a),
+        json=omitted,
+    )
+    assert without_id.status_code == 201
+    assert without_id.json()["minutes"][0]["video_record_id"] is None
+
+    explicit_null = client.post(
+        f"/cameras/{camera_a}/verification-attempts",
+        headers=_auth_headers(token_a),
+        json=_attempt_payload(record_id=None, scope="partial"),
+    )
+    assert explicit_null.status_code == 201
+    assert explicit_null.json()["minutes"][0]["video_record_id"] is None
+
+    owned = client.post(
+        f"/cameras/{camera_a}/verification-attempts",
+        headers=_auth_headers(token_a),
+        json=_attempt_payload(record_id=str(record_a.id), scope="minute"),
+    )
+    assert owned.status_code == 201
+    assert owned.json()["minutes"][0]["video_record_id"] == str(record_a.id)
+    assert _attempt_count(db_session) == 3
+    assert _minute_count(db_session) == 3
+    assert _record_count(db_session) == records_before
 
 
 def test_list_attempts_empty(client: TestClient) -> None:

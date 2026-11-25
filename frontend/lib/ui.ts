@@ -1,9 +1,11 @@
 /** Shared class names aligned with the marketing landing palette. */
 
 export const ui = {
-  pageTitle: "font-display text-3xl font-semibold tracking-tight text-landing-ink",
+  pageTitle:
+    "font-display text-3xl font-semibold tracking-tight text-landing-ink",
   pageSubtitle: "text-sm text-landing-ink/65",
-  sectionTitle: "font-display text-xl font-semibold tracking-tight text-landing-ink",
+  sectionTitle:
+    "font-display text-xl font-semibold tracking-tight text-landing-ink",
   label: "block text-sm font-medium text-landing-ink/80",
   hint: "text-xs text-landing-ink/55",
   muted: "text-sm text-landing-ink/65",
@@ -15,6 +17,9 @@ export const ui = {
     "rounded-md border border-landing-ink/15 bg-white px-3 py-2.5 text-sm text-landing-ink outline-none transition focus:border-landing-accent focus:ring-2 focus:ring-landing-accent/20",
   panel:
     "rounded-2xl border border-landing-ink/10 bg-white/80 p-4 shadow-sm backdrop-blur sm:p-5",
+  videoFrame:
+    "relative aspect-video w-full overflow-hidden rounded-lg bg-landing-ink",
+  videoMedia: "absolute inset-0 h-full w-full object-contain",
   panelMuted:
     "rounded-2xl border border-dashed border-landing-ink/15 bg-white/50 p-6 text-center text-landing-ink/65",
   dangerPanel:

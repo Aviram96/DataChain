@@ -75,7 +75,11 @@ export function LoginForm() {
           className={ui.input}
         />
       </div>
-      <button type="submit" disabled={submitting} className={`w-full ${ui.btnPrimary}`}>
+      <button
+        type="submit"
+        disabled={submitting}
+        className={`w-full ${ui.btnPrimary}`}
+      >
         {submitting ? "Logging in…" : "Log in"}
       </button>
       <p className={`text-center ${ui.muted}`}>

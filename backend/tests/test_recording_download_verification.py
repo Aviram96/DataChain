@@ -20,7 +20,11 @@ from app.deps import get_db
 from app.main import app
 from app.models.video_record import VideoRecord
 from app.routers.recordings import _VerifiedDownloadResponse
-from app.services.chain_anchor import ChainAnchorError, SegmentAnchor
+from app.services.chain_anchor import (
+    ChainAnchorError,
+    ChainAnchorNotFoundError,
+    SegmentAnchor,
+)
 from app.services.recording_download import RecordingDownloadError
 
 import app.models as _models  # noqa: F401
@@ -111,12 +115,13 @@ def _add_segment(
     body: bytes = VIDEO,
     seconds: int = 60,
     cid: str | None = None,
+    ended: datetime | None = None,
 ) -> VideoRecord:
     record = VideoRecord(
         id=uuid4(),
         camera_id=UUID(camera_id),
         started_at=started,
-        ended_at=started + timedelta(seconds=seconds),
+        ended_at=ended if ended is not None else started + timedelta(seconds=seconds),
         ipfs_cid=cid or f"bafy{uuid4().hex}",
         segment_hash=hashlib.sha256(body).hexdigest(),
         tx_hash=TX,
@@ -156,7 +161,7 @@ def _install_sources(
         record = by_start[_unix(started_at)]
         mode = modes[record.id]
         if mode == "missing":
-            raise ChainAnchorError("AnchorNotFound")
+            raise ChainAnchorNotFoundError()
         if mode == "failed":
             raise ChainAnchorError("On-chain segment read failed: timeout")
         ended = record.ended_at
@@ -360,6 +365,70 @@ def test_two_verified_segments_are_concatenated_in_order(
     assert not work.exists()
 
 
+def test_november_17_microsecond_seam_downloads_every_segment(
+    client: TestClient,
+    db_session: Session,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token = _register_and_token(client, "dl-seam@example.com")
+    camera_id = _create_camera(client, token)
+    spans = [
+        (
+            datetime(2026, 11, 17, 11, 44, tzinfo=timezone.utc),
+            datetime(2026, 11, 17, 11, 44, 58, 333333, tzinfo=timezone.utc),
+            b"segment-a",
+        ),
+        (
+            datetime(2026, 11, 17, 11, 44, 58, 333333, tzinfo=timezone.utc),
+            datetime(2026, 11, 17, 11, 45, 56, 666666, tzinfo=timezone.utc),
+            b"segment-b",
+        ),
+        (
+            datetime(2026, 11, 17, 11, 45, 56, 666667, tzinfo=timezone.utc),
+            datetime(2026, 11, 17, 11, 46, 3, 333334, tzinfo=timezone.utc),
+            b"segment-c",
+        ),
+    ]
+    records = [
+        _add_segment(db_session, camera_id, start, ended=end, body=body)
+        for start, end, body in spans
+    ]
+    work = tmp_path / "download-work"
+    _pin_work_dir(monkeypatch, work)
+    seen: list[list[bytes]] = []
+
+    def concat(paths: list[Path], output: Path) -> None:
+        seen.append([path.read_bytes() for path in paths])
+        output.write_bytes(b"joined-abc")
+
+    monkeypatch.setattr("app.services.recording_download.concat_mp4s", concat)
+    _install_sources(
+        monkeypatch,
+        records,
+        {record.id: "verified" for record in records},
+        bodies={record.id: body for record, (*_span, body) in zip(records, spans)},
+        fetched=[],
+    )
+
+    response = _download(client, token, camera_id, spans[0][0], spans[-1][1])
+    report, video = _multipart(response)
+
+    assert seen == [[b"segment-a", b"segment-b", b"segment-c"]]
+    assert video == b"joined-abc"
+    assert report["overall"] == "verified"
+    assert report["discontinuous"] is False
+    assert report["detail"] == "Every segment in this range is verified."
+    assert report["missing_intervals"] == []
+    assert report["excluded_intervals"] == []
+    assert [item["status"] for item in report["segments"]] == [
+        "verified",
+        "verified",
+        "verified",
+    ]
+    assert not work.exists()
+
+
 def test_partial_success_omits_unverified_segments(
     client: TestClient,
     db_session: Session,
@@ -420,9 +489,7 @@ def test_partial_success_omits_unverified_segments(
     assert statuses[str(first.id)] == "verified"
     assert statuses[str(middle.id)] == "tampered"
     assert statuses[str(third.id)] == "verified"
-    excluded_ids = [
-        item["video_record_id"] for item in report["excluded_intervals"]
-    ]
+    excluded_ids = [item["video_record_id"] for item in report["excluded_intervals"]]
     assert excluded_ids == [str(middle.id)]
     assert not work.exists()
 

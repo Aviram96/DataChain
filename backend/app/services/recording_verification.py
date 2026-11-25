@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import logging
 import tempfile
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 from uuid import UUID
@@ -23,10 +24,12 @@ from sqlalchemy.orm import Session
 from app.models.video_record import VideoRecord
 from app.services.chain_anchor import (
     ChainAnchorError,
+    ChainAnchorNotFoundError,
     SegmentAnchor,
     get_segment,
     unix_uint64,
 )
+from app.services.playback_timing import log_playback_step
 from app.services.recording_download import RecordingDownloadError, fetch_cid_to_file
 from app.services.segment_integrity import sha256_file
 from app.services.video_chunker import resolve_temp_dir
@@ -59,6 +62,9 @@ _FAILED_HASH = (
     "Verification could not be completed because the file hash could not be calculated."
 )
 _MISSING_COVERAGE = "No recording covers this part of the requested range."
+# Timestamp seams below this are treated as continuous. A real hole of
+# 1 millisecond or longer is still reported as uncovered.
+_MIN_UNCOVERED_GAP = timedelta(milliseconds=1)
 
 _WORST_FIRST: tuple[VerifyStatus, ...] = (
     "tampered",
@@ -160,7 +166,13 @@ def verify_recording_range(
     fetch = fetch_file if fetch_file is not None else fetch_cid_to_file
     digest_file = hash_file if hash_file is not None else sha256_file
 
+    lookup_started = time.perf_counter()
     records = _overlapping_records(db, camera_id, window_start, window_end)
+    log_playback_step(
+        "database_overlap",
+        lookup_started,
+        rows=len(records),
+    )
     segments: list[SegmentVerification] = []
     eligible: list[EligibleSegment] = []
     for record in records:
@@ -235,9 +247,16 @@ def _verify_record(
     hash_file: HashFile,
 ) -> tuple[SegmentVerification, Path | None]:
     started_at = _as_utc(record.started_at)
+    chain_started = time.perf_counter()
     try:
         anchored = read_anchor(camera_id, started_at)
     except ChainAnchorError as exc:
+        log_playback_step(
+            "blockchain",
+            chain_started,
+            record_id=record.id,
+            outcome="error",
+        )
         if _anchor_missing(exc):
             return _outcome(record, "missing", _MISSING_ANCHOR), None
         logger.warning(
@@ -248,6 +267,12 @@ def _verify_record(
         )
         return _outcome(record, "failed", _FAILED_CHAIN), None
     except Exception as exc:
+        log_playback_step(
+            "blockchain",
+            chain_started,
+            record_id=record.id,
+            outcome="error",
+        )
         logger.warning(
             "Blockchain read failed for camera %s segment %s: %s",
             camera_id,
@@ -256,13 +281,28 @@ def _verify_record(
         )
         return _outcome(record, "failed", _FAILED_CHAIN), None
 
+    log_playback_step(
+        "blockchain",
+        chain_started,
+        record_id=record.id,
+        outcome="ok",
+    )
+
     if not _metadata_matches(record, anchored, camera_id=camera_id):
         return _outcome(record, "tampered", _TAMPERED_METADATA), None
 
     path = directory / f"{record.id}.mp4"
+    download_started = time.perf_counter()
     try:
         fetch_file(record.ipfs_cid, path)
     except RecordingDownloadError as exc:
+        log_playback_step(
+            "ipfs_download",
+            download_started,
+            record_id=record.id,
+            outcome="error",
+            bytes=0,
+        )
         _remove_file(path)
         logger.warning(
             "IPFS retrieval failed for segment %s: %s",
@@ -271,6 +311,13 @@ def _verify_record(
         )
         return _outcome(record, "unavailable", _UNAVAILABLE), None
     except Exception as exc:
+        log_playback_step(
+            "ipfs_download",
+            download_started,
+            record_id=record.id,
+            outcome="error",
+            bytes=0,
+        )
         _remove_file(path)
         logger.warning(
             "IPFS retrieval failed for segment %s: %s",
@@ -279,12 +326,34 @@ def _verify_record(
         )
         return _outcome(record, "unavailable", _UNAVAILABLE), None
 
+    log_playback_step(
+        "ipfs_download",
+        download_started,
+        record_id=record.id,
+        outcome="ok",
+        bytes=path.stat().st_size if path.is_file() else 0,
+    )
+
+    hash_started = time.perf_counter()
     try:
         digest = hash_file(path)
     except Exception as exc:
+        log_playback_step(
+            "sha256",
+            hash_started,
+            record_id=record.id,
+            outcome="error",
+        )
         _remove_file(path)
         logger.warning("Could not hash segment %s: %s", record.id, exc)
         return _outcome(record, "failed", _FAILED_HASH), None
+
+    log_playback_step(
+        "sha256",
+        hash_started,
+        record_id=record.id,
+        outcome="ok",
+    )
 
     if not _same_hash(digest, anchored.segment_hash):
         _remove_file(path)
@@ -353,7 +422,7 @@ def _uncovered_intervals(
     covered.sort()
     merged: list[tuple[datetime, datetime]] = []
     for start, end in covered:
-        if not merged or start > merged[-1][1]:
+        if not merged or _is_uncovered_gap(merged[-1][1], start):
             merged.append((start, end))
         else:
             merged[-1] = (merged[-1][0], max(merged[-1][1], end))
@@ -361,12 +430,17 @@ def _uncovered_intervals(
     gaps: list[tuple[datetime, datetime]] = []
     cursor = window_start
     for start, end in merged:
-        if start > cursor:
+        if _is_uncovered_gap(cursor, start):
             gaps.append((cursor, start))
         cursor = max(cursor, end)
-    if cursor < window_end:
+    if _is_uncovered_gap(cursor, window_end):
         gaps.append((cursor, window_end))
     return gaps
+
+
+def _is_uncovered_gap(left: datetime, right: datetime) -> bool:
+    """True when ``right`` starts at least 1 millisecond after ``left``."""
+    return right - left >= _MIN_UNCOVERED_GAP
 
 
 def _clip(
@@ -412,7 +486,7 @@ def _outcome(
 
 
 def _anchor_missing(exc: ChainAnchorError) -> bool:
-    return "AnchorNotFound" in str(exc)
+    return isinstance(exc, ChainAnchorNotFoundError)
 
 
 def _same_cid(stored: str, anchored: str) -> bool:

@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import io
+import subprocess
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import create_engine
@@ -393,3 +397,280 @@ def test_ingest_records_ffmpeg_pid_before_the_run_closes(
     assert len(markers) == 1
     assert pid_files[0].read_text(encoding="utf-8").strip() == "5151"
     assert pid_files[0].name.replace(".pid", ".closed") == markers[0].name
+
+
+class _StopStream(io.BytesIO):
+    def __init__(self, released: threading.Event) -> None:
+        super().__init__()
+        self._released = released
+
+    def write(self, data: bytes) -> int:  # type: ignore[override]
+        self._released.set()
+        return super().write(data)
+
+    def flush(self) -> None:
+        return None
+
+
+class _HoldingFFmpeg:
+    """FFmpeg stand-in that runs until ingest asks it to stop."""
+
+    def __init__(self) -> None:
+        self.released = threading.Event()
+        self.stdin = _StopStream(self.released)
+        self.stderr = None
+        self.pid = 4242
+        self.returncode: int | None = None
+        self._lock = threading.Lock()
+
+    def poll(self) -> int | None:
+        with self._lock:
+            return self.returncode
+
+    def wait(self, timeout: float | None = None) -> int:
+        if not self.released.wait(timeout):
+            raise subprocess.TimeoutExpired("ffmpeg", timeout or 0)
+        with self._lock:
+            if self.returncode is None:
+                self.returncode = 0
+            return self.returncode
+
+    def terminate(self) -> None:
+        with self._lock:
+            self.returncode = -15
+        self.released.set()
+
+    def kill(self) -> None:
+        with self._lock:
+            self.returncode = -9
+        self.released.set()
+
+
+def _running_ingest(
+    tmp_path: Path,
+) -> tuple[sessionmaker, UUID, CameraIngest]:
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'ingest.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    Base.metadata.create_all(bind=engine)
+    session_factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = session_factory()
+    user = User(email="watch@example.com", password_hash=hash_password("password12"))
+    db.add(user)
+    db.flush()
+    camera = Camera(
+        user_id=user.id,
+        name="Gate",
+        stream_url="rtsp://192.0.2.50/live",
+    )
+    db.add(camera)
+    db.commit()
+    camera_id = camera.id
+    stream_url = camera.stream_url
+    db.close()
+    config = CameraIngestConfig(
+        camera_id=camera_id,
+        stream_url=stream_url,
+        temp_dir=tmp_path / "chunks",
+    )
+    return (
+        session_factory,
+        camera_id,
+        CameraIngest(config, session_factory=session_factory),
+    )
+
+
+def _run_until_stopped(
+    ingest: CameraIngest,
+    monkeypatch: pytest.MonkeyPatch,
+) -> int:
+    monkeypatch.setattr(
+        "app.services.camera_ingest.ACTIVE_CAMERA_CHECK_SECONDS",
+        0.05,
+    )
+    result: dict[str, object] = {}
+
+    def run() -> None:
+        try:
+            with patch(
+                "app.services.ffmpeg_supervisor.subprocess.Popen",
+                return_value=_HoldingFFmpeg(),
+            ):
+                result["code"] = ingest.run_until_signal()
+        except Exception as exc:  # pragma: no cover - failure signal for the join
+            result["error"] = exc
+
+    worker = threading.Thread(target=run, daemon=True)
+    worker.start()
+    worker.join(5)
+    assert not worker.is_alive()
+    assert "error" not in result
+    assert result["code"] == 0
+    return 0
+
+
+def test_inactive_stop_before_ffmpeg_does_not_start_it(
+    tmp_path: Path,
+) -> None:
+    session_factory, camera_id, ingest = _running_ingest(tmp_path)
+    ingest.stop(inactive=True)
+    with patch("app.services.ffmpeg_supervisor.subprocess.Popen") as popen:
+        assert ingest.run_until_signal() == 0
+    popen.assert_not_called()
+    db = session_factory()
+    try:
+        row = db.get(Camera, camera_id)
+        assert row is not None
+        assert row.ingest_offline_at is None
+        assert ingest.inactive_stop is True
+    finally:
+        db.close()
+
+
+def test_external_inactive_stop_skips_final_flush(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.chunk_processing_worker import ChunkProcessingWorker
+
+    _session_factory, _camera_id, ingest = _running_ingest(tmp_path)
+    seen: dict[str, bool] = {}
+    original = ChunkProcessingWorker.stop
+
+    def spy(self: ChunkProcessingWorker, *, flush: bool = True) -> None:
+        seen["flush"] = flush
+        original(self, flush=flush)
+
+    monkeypatch.setattr(ChunkProcessingWorker, "stop", spy)
+
+    def stop_soon() -> None:
+        time.sleep(0.2)
+        ingest.stop(inactive=True)
+
+    threading.Thread(target=stop_soon, daemon=True).start()
+    _run_until_stopped(ingest, monkeypatch)
+    assert seen["flush"] is False
+    assert ingest.inactive_stop is True
+
+
+def test_retryable_give_up_does_not_mark_offline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_factory, camera_id, _existing = _running_ingest(tmp_path)
+    seen: dict[str, object] = {}
+
+    class FakeSupervisor:
+        def __init__(self, config: object) -> None:
+            seen["handlers"] = getattr(config, "install_signal_handlers", None)
+            self.gave_up_after_restarts = True
+            self.restart_count = 0
+
+        def run_until_signal(self) -> int:
+            return 1
+
+        def stop(self) -> None:
+            return None
+
+    class FakeWorker:
+        def __init__(self, config: object) -> None:
+            return None
+
+        def start(self) -> None:
+            return None
+
+        def stop(self, *, flush: bool = True) -> None:
+            seen["flush"] = flush
+
+    monkeypatch.setattr("app.services.camera_ingest.FFmpegSupervisor", FakeSupervisor)
+    monkeypatch.setattr("app.services.camera_ingest.ChunkProcessingWorker", FakeWorker)
+    ingest = CameraIngest(
+        CameraIngestConfig(
+            camera_id=camera_id,
+            stream_url="rtsp://192.0.2.50/live",
+            temp_dir=tmp_path / "chunks",
+        ),
+        session_factory=session_factory,
+        install_signal_handlers=False,
+        mark_offline_on_give_up=False,
+        max_restarts=0,
+    )
+    assert ingest.run_until_signal() == 1
+    db = session_factory()
+    try:
+        row = db.get(Camera, camera_id)
+        assert row is not None
+        assert row.ingest_offline_at is None
+        assert seen["handlers"] is False
+        assert seen["flush"] is True
+    finally:
+        db.close()
+
+
+def test_archive_stops_running_ingest_without_marking_offline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session_factory, camera_id, ingest = _running_ingest(tmp_path)
+
+    def archive_soon() -> None:
+        time.sleep(0.15)
+        db = session_factory()
+        row = db.get(Camera, camera_id)
+        assert row is not None
+        row.deleted_at = datetime.now(timezone.utc)
+        db.commit()
+        db.close()
+
+    threading.Thread(target=archive_soon, daemon=True).start()
+    _run_until_stopped(ingest, monkeypatch)
+
+    db = session_factory()
+    try:
+        row = db.get(Camera, camera_id)
+        assert row is not None
+        assert row.deleted_at is not None
+        assert row.ingest_offline_at is None
+        assert ingest._inactive_stop is True
+        assert ingest._supervisor is not None
+        assert ingest._supervisor.gave_up_after_restarts is False
+    finally:
+        db.close()
+
+
+def test_database_error_stops_ingest_without_marking_offline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import camera_ingest as ingest_module
+
+    session_factory, camera_id, ingest = _running_ingest(tmp_path)
+    original = ingest_module.get_active_camera
+    armed = {"on": False}
+
+    def flaky(db: Session, checked_id: UUID) -> Camera:
+        if armed["on"]:
+            raise RuntimeError("database unavailable")
+        return original(db, checked_id)
+
+    monkeypatch.setattr(ingest_module, "get_active_camera", flaky)
+
+    def arm() -> None:
+        time.sleep(0.12)
+        armed["on"] = True
+
+    threading.Thread(target=arm, daemon=True).start()
+    _run_until_stopped(ingest, monkeypatch)
+
+    db = session_factory()
+    try:
+        row = db.get(Camera, camera_id)
+        assert row is not None
+        assert row.deleted_at is None
+        assert row.ingest_offline_at is None
+        assert ingest._inactive_stop is True
+        assert ingest._supervisor is not None
+        assert ingest._supervisor.gave_up_after_restarts is False
+    finally:
+        db.close()

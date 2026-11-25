@@ -24,6 +24,7 @@ from app.services.camera_ingest import (
 )
 from app.services.chain_anchor import (
     ChainAnchorError,
+    ChainAnchorNotFoundError,
     SegmentAnchor,
     SegmentAnchorRequest,
 )
@@ -100,7 +101,24 @@ def _segment(tmp_path: Path) -> Path:
 
 
 def _not_anchored(_camera_id: UUID, _started_at: datetime) -> SegmentAnchor:
-    raise ChainAnchorError("AnchorNotFound")
+    raise ChainAnchorNotFoundError()
+
+
+def test_generic_chain_error_mentioning_anchor_not_found_is_not_missing() -> None:
+    from app.services.ingest_segment_processor import _read_anchor
+
+    def read(_camera_id: UUID, _started_at: datetime) -> SegmentAnchor:
+        raise ChainAnchorError("provider said AnchorNotFound")
+
+    with pytest.raises(
+        ChainAnchorError, match="provider said AnchorNotFound"
+    ) as caught:
+        _read_anchor(
+            read,
+            CAMERA_ID,
+            datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc),
+        )
+    assert not isinstance(caught.value, ChainAnchorNotFoundError)
 
 
 def _closed_timeline(path: Path, *, start: float, duration: float) -> None:
@@ -342,9 +360,15 @@ def test_keyframe_overrun_is_stored_from_the_timeline(
         anchored_requests.append(request)
         return TX
 
-    with patch(
-        "app.services.ingest_segment_processor.probe_video_timing",
-        return_value=(2.24, 20.0),
+    with (
+        patch(
+            "app.services.ingest_segment_processor.probe_video_timing",
+            return_value=(2.24, 20.0),
+        ),
+        patch(
+            "app.services.ingest_segment_processor.normalize_segment_media",
+            side_effect=lambda source, **_kwargs: source,
+        ),
     ):
         ok = process_ingest_segment(
             path,
@@ -369,18 +393,22 @@ def test_second_segment_reference_maps_utc_window(
     path = _segment(tmp_path)
     second = f"{CAMERA_ID}_20260824T120008Z.mp4"
     csv_path = path.parent / "segments_run.csv"
-    csv_path.write_text(
-        f"{path.name},0.000000,8.080000\n{second},8.080000,13.080000\n"
-    )
+    csv_path.write_text(f"{path.name},0.000000,8.080000\n{second},8.080000,13.080000\n")
     anchored: list[SegmentAnchorRequest] = []
 
     def fake_anchor(request: SegmentAnchorRequest) -> str:
         anchored.append(request)
         return TX
 
-    with patch(
-        "app.services.ingest_segment_processor.probe_video_timing",
-        return_value=(3.08, 5.0),
+    with (
+        patch(
+            "app.services.ingest_segment_processor.probe_video_timing",
+            return_value=(3.08, 5.0),
+        ),
+        patch(
+            "app.services.ingest_segment_processor.normalize_segment_media",
+            side_effect=lambda source, **_kwargs: source,
+        ),
     ):
         ok = process_ingest_segment(
             path,
@@ -697,7 +725,7 @@ def test_already_anchored_race_does_not_create_a_second_record(
     def read(_camera_id: UUID, _started_at: datetime) -> SegmentAnchor:
         reads["n"] += 1
         if reads["n"] == 1:
-            raise ChainAnchorError("AnchorNotFound")
+            raise ChainAnchorNotFoundError()
         return SegmentAnchor(
             camera_id=CAMERA_ID,
             started_at=started,
@@ -800,3 +828,144 @@ def test_retry_does_not_change_an_existing_matching_record(
         assert _as_utc(row.ended_at) == stored_end
     finally:
         db.close()
+
+
+def test_archived_camera_is_not_uploaded(
+    tmp_path: Path, session_factory: sessionmaker
+) -> None:
+    from app.services.ingest_segment_processor import publishing_allowed
+
+    path = _segment(tmp_path)
+    _closed_timeline(path, start=0.0, duration=60.0)
+    db = session_factory()
+    camera = db.get(Camera, CAMERA_ID)
+    assert camera is not None
+    camera.deleted_at = datetime.now(timezone.utc)
+    db.commit()
+    assert publishing_allowed(db, CAMERA_ID) is False
+    db.close()
+
+    def forbid_upload(_path: Path) -> str:
+        raise AssertionError("archived camera must not be uploaded")
+
+    def forbid_anchor(_request: SegmentAnchorRequest) -> str:
+        raise AssertionError("archived camera must not be anchored")
+
+    with patch(
+        "app.services.ingest_segment_processor.probe_video_timing",
+        return_value=(0.0, 60.0),
+    ):
+        ok = process_ingest_segment(
+            path,
+            session_factory=session_factory,
+            upload=forbid_upload,
+            send_anchor=forbid_anchor,
+            read_anchor=_not_anchored,
+        )
+    assert ok is False
+    assert path.exists()
+    assert not path.with_name(f"{path.name}.invalid").exists()
+    checked = session_factory()
+    try:
+        assert checked.query(VideoRecord).count() == 0
+        row = checked.get(Camera, CAMERA_ID)
+        assert row is not None
+        assert row.deleted_at is not None
+    finally:
+        checked.close()
+
+
+def test_archive_after_upload_does_not_anchor(
+    tmp_path: Path,
+    session_factory: sessionmaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = _segment(tmp_path)
+    _closed_timeline(path, start=0.0, duration=60.0)
+    uploaded = {"done": False}
+    anchors: list[SegmentAnchorRequest] = []
+
+    def allowed(_db: Session, _camera_id: UUID) -> bool:
+        return not uploaded["done"]
+
+    def upload(_path: Path) -> str:
+        uploaded["done"] = True
+        return CID
+
+    monkeypatch.setattr(
+        "app.services.ingest_segment_processor.publishing_allowed",
+        allowed,
+    )
+    with patch(
+        "app.services.ingest_segment_processor.probe_video_timing",
+        return_value=(0.0, 60.0),
+    ):
+        ok = process_ingest_segment(
+            path,
+            session_factory=session_factory,
+            upload=upload,
+            send_anchor=lambda request: anchors.append(request) or TX,
+            read_anchor=_not_anchored,
+        )
+    assert uploaded["done"] is True
+    assert anchors == []
+    assert ok is False
+    assert path.exists()
+    db = session_factory()
+    try:
+        assert db.query(VideoRecord).count() == 0
+    finally:
+        db.close()
+
+
+def test_publishing_allowed_fails_closed_when_the_database_errors() -> None:
+    from app.services.ingest_segment_processor import publishing_allowed
+
+    class Broken:
+        def __init__(self) -> None:
+            self.rolled_back = False
+
+        def get(self, *_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("database unavailable")
+
+        def rollback(self) -> None:
+            self.rolled_back = True
+
+    db = Broken()
+    assert publishing_allowed(db, CAMERA_ID) is False  # type: ignore[arg-type]
+    assert db.rolled_back is True
+
+
+def test_archived_camera_does_not_anchor_an_existing_row(
+    tmp_path: Path, session_factory: sessionmaker
+) -> None:
+    from app.services.ingest_segment_processor import _finish_existing_record
+
+    path = _segment(tmp_path)
+    db = session_factory()
+    camera = db.get(Camera, CAMERA_ID)
+    assert camera is not None
+    camera.deleted_at = datetime.now(timezone.utc)
+    existing = VideoRecord(
+        camera_id=CAMERA_ID,
+        started_at=datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc),
+        ended_at=datetime(2026, 8, 24, 12, 1, tzinfo=timezone.utc),
+        ipfs_cid=CID,
+        segment_hash="ab" * 32,
+        tx_hash=TX,
+    )
+    db.commit()
+    anchors: list[SegmentAnchorRequest] = []
+    ok = _finish_existing_record(
+        db,
+        path,
+        existing=existing,
+        digest=existing.segment_hash,
+        send_anchor=lambda request: anchors.append(request) or "0x" + "cd" * 32,
+        read_anchor=_not_anchored,
+    )
+    assert ok is False
+    assert anchors == []
+    assert existing.ipfs_cid == CID
+    assert existing.tx_hash == TX
+    db.close()

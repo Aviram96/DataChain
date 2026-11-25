@@ -1,353 +1,4 @@
-import type { PlaybackDenial, VideoRecordPublic } from "./recordings-api";
-
-export const SEGMENT_MS = 60_000;
-export const MAX_EXPECTED_MINUTES = 24 * 60;
-
-export type VerifyStatus =
-  | "verified"
-  | "tampered"
-  | "missing"
-  | "unavailable"
-  | "failed"
-  | "failed_to_verify";
-
-export type ChainRead =
-  | {
-      kind: "found";
-      cameraId: string;
-      startedAt: bigint;
-      endedAt: bigint;
-      cid: string;
-      segmentHash: string;
-    }
-  | { kind: "not_found" }
-  | { kind: "rpc_error"; message: string };
-
-export type VerifyMinuteResult = {
-  slotIso: string;
-  endedAt?: string;
-  status: VerifyStatus;
-  detail: string;
-  record: VideoRecordPublic | null;
-  /** Download rows distinguish a stored segment from a gap in the request. */
-  entry?: "segment" | "gap";
-};
-
-export type VerifyReport = {
-  overall: VerifyStatus;
-  results: VerifyMinuteResult[];
-  scope?: "full" | "partial" | "minute";
-  source?: "verify" | "watch" | "download";
-  detail?: string;
-};
-
-export type TimeWindow = {
-  startedAt: string;
-  endedAt: string;
-};
-
-export function expectedMinuteStarts(
-  startedAtIso: string,
-  endedAtIso: string
-): Date[] {
-  const startMs = Date.parse(startedAtIso);
-  const endMs = Date.parse(endedAtIso);
-  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
-    return [];
-  }
-  const first = Math.floor(startMs / SEGMENT_MS) * SEGMENT_MS;
-  const starts: Date[] = [];
-  for (let t = first; t < endMs; t += SEGMENT_MS) {
-    if (t + SEGMENT_MS > startMs && t < endMs) {
-      starts.push(new Date(t));
-    }
-  }
-  return starts;
-}
-
-/** Keep a sub-range only when it sits fully inside the selected recording window (CP-E.P9). */
-export function clipSubRange(
-  parent: TimeWindow,
-  sub: TimeWindow
-): TimeWindow | "outside" | "invalid" {
-  const parentStart = Date.parse(parent.startedAt);
-  const parentEnd = Date.parse(parent.endedAt);
-  const subStart = Date.parse(sub.startedAt);
-  const subEnd = Date.parse(sub.endedAt);
-  if (
-    !Number.isFinite(parentStart) ||
-    !Number.isFinite(parentEnd) ||
-    !Number.isFinite(subStart) ||
-    !Number.isFinite(subEnd) ||
-    parentEnd <= parentStart ||
-    subEnd <= subStart
-  ) {
-    return "invalid";
-  }
-  if (subStart < parentStart || subEnd > parentEnd) {
-    return "outside";
-  }
-  return sub;
-}
-
-export function findRecordForSlot(
-  records: VideoRecordPublic[],
-  slot: Date
-): VideoRecordPublic | undefined {
-  const slotStart = slot.getTime();
-  const slotEnd = slotStart + SEGMENT_MS;
-  return records.find((record) => {
-    const started = Date.parse(record.started_at);
-    return started >= slotStart && started < slotEnd;
-  });
-}
-
-/**
- * A clip that started in an earlier minute can still cover this clock minute
- * inside the checked range. That time belongs to the earlier clip.
- */
-export function minuteAlreadyCovered(
-  records: VideoRecordPublic[],
-  slot: Date,
-  range: TimeWindow
-): boolean {
-  const slotStart = slot.getTime();
-  const slotEnd = slotStart + SEGMENT_MS;
-  const rangeStart = Date.parse(range.startedAt);
-  const rangeEnd = Date.parse(range.endedAt);
-  const from = Math.max(slotStart, rangeStart);
-  const to = Math.min(slotEnd, rangeEnd);
-  if (!(to > from)) {
-    return false;
-  }
-  return records.some((record) => {
-    const started = Date.parse(record.started_at);
-    const ended = Date.parse(record.ended_at);
-    if (!Number.isFinite(started) || !Number.isFinite(ended)) {
-      return false;
-    }
-    if (started >= slotStart && started < slotEnd) {
-      return false;
-    }
-    return started <= from && ended >= to;
-  });
-}
-
-export function unixSeconds(iso: string): bigint {
-  return BigInt(Math.floor(Date.parse(iso) / 1000));
-}
-
-export function classifySegment(input: {
-  cameraId: string;
-  record?: VideoRecordPublic | null;
-  chain: ChainRead;
-}): { status: VerifyStatus; detail: string } {
-  const { cameraId, record, chain } = input;
-
-  if (chain.kind === "rpc_error") {
-    return {
-      status: "failed_to_verify",
-      detail:
-        "Could not read the blockchain (RPC). This is not a tamper result.",
-    };
-  }
-
-  if (!record) {
-    return {
-      status: "missing",
-      detail:
-        chain.kind === "found"
-          ? "No recording in the app for this minute, even though an on-chain proof exists."
-          : "No recording for this minute.",
-    };
-  }
-
-  if (chain.kind === "not_found") {
-    return {
-      status: "tampered",
-      detail:
-        "The app has this minute, but no matching proof is on the blockchain.",
-    };
-  }
-
-  const matches =
-    sameCamera(cameraId, chain.cameraId) &&
-    sameCid(record.ipfs_cid, chain.cid) &&
-    sameHash(record.segment_hash, chain.segmentHash) &&
-    unixSeconds(record.started_at) === chain.startedAt &&
-    unixSeconds(record.ended_at) === chain.endedAt;
-
-  if (!matches) {
-    return {
-      status: "tampered",
-      detail: "App metadata does not match the blockchain proof.",
-    };
-  }
-
-  return {
-    status: "verified",
-    detail: "App CID, hash, and times match the blockchain record.",
-  };
-}
-
-export function aggregateStatus(statuses: VerifyStatus[]): VerifyStatus {
-  if (statuses.length === 0) {
-    return "missing";
-  }
-  if (statuses.some((status) => status === "tampered")) {
-    return "tampered";
-  }
-  if (statuses.some((status) => status === "failed")) {
-    return "failed";
-  }
-  if (statuses.some((status) => status === "unavailable")) {
-    return "unavailable";
-  }
-  if (statuses.some((status) => status === "failed_to_verify")) {
-    return "failed_to_verify";
-  }
-  if (statuses.some((status) => status === "missing")) {
-    return "missing";
-  }
-  return "verified";
-}
-
-export function verifyStatusLabel(status: VerifyStatus): string {
-  switch (status) {
-    case "verified":
-      return "Verified";
-    case "tampered":
-      return "Tampered";
-    case "missing":
-      return "Missing";
-    case "unavailable":
-      return "Unavailable";
-    case "failed":
-      return "Failed";
-    case "failed_to_verify":
-      return "Failed to verify";
-  }
-}
-
-/** One sentence for the clip on screen. */
-export function verifyStatusMeaning(status: VerifyStatus): string {
-  switch (status) {
-    case "verified":
-      return "This clip matches the proof stored on the chain.";
-    case "tampered":
-      return "This clip does not match the proof stored on the chain.";
-    case "missing":
-      return "No saved clip begins in this clock minute.";
-    case "unavailable":
-      return "The video file could not be retrieved, so it was not played.";
-    case "failed":
-      return "Verification could not be completed, so this clip was not played.";
-    case "failed_to_verify":
-      return "The chain could not be read, so this clip was not checked.";
-  }
-}
-
-/** Map a backend playback denial onto the shared verification report. */
-export function reportFromPlaybackDenial(
-  denial: PlaybackDenial,
-  record: VideoRecordPublic
-): VerifyReport {
-  const segments: VerifyMinuteResult[] = denial.segments.map((segment) => ({
-    slotIso: segment.started_at,
-    endedAt: segment.ended_at,
-    status: segment.status,
-    detail: segment.detail,
-    record: segment.video_record_id === record.id ? record : null,
-    entry: "segment",
-  }));
-  const covered = new Set(
-    denial.segments.map(
-      (segment) =>
-        `${segment.video_record_id}|${segment.started_at}|${segment.ended_at}`
-    )
-  );
-  const excluded: VerifyMinuteResult[] = denial.excluded_intervals
-    .filter(
-      (interval) =>
-        !covered.has(
-          `${interval.video_record_id}|${interval.started_at}|${interval.ended_at}`
-        )
-    )
-    .map((interval) => ({
-      slotIso: interval.started_at,
-      endedAt: interval.ended_at,
-      status: interval.status,
-      detail: interval.detail,
-      record: interval.video_record_id === record.id ? record : null,
-      entry: "segment" as const,
-    }));
-  const gaps: VerifyMinuteResult[] = denial.missing_intervals.map((interval) => ({
-    slotIso: interval.started_at,
-    endedAt: interval.ended_at,
-    status: "missing",
-    detail: interval.detail,
-    record: null,
-    entry: "gap",
-  }));
-  return {
-    overall: denial.overall,
-    results: [...segments, ...excluded, ...gaps].sort(
-      (left, right) => Date.parse(left.slotIso) - Date.parse(right.slotIso)
-    ),
-    scope: "minute",
-    source: "watch",
-    detail: denial.detail,
-  };
-}
-
-export function countByStatus(
-  results: VerifyMinuteResult[]
-): Record<VerifyStatus, number> {
-  const counts: Record<VerifyStatus, number> = {
-    verified: 0,
-    tampered: 0,
-    missing: 0,
-    unavailable: 0,
-    failed: 0,
-    failed_to_verify: 0,
-  };
-  for (const result of results) {
-    counts[result.status] += 1;
-  }
-  return counts;
-}
-
-function sameCamera(uuid: string, chainCameraId: string): boolean {
-  return uuidToHex(uuid) === bytesToHex(chainCameraId, 32);
-}
-
-function sameCid(dbCid: string, chainCid: string): boolean {
-  return dbCid.trim() === chainCid.trim();
-}
-
-function sameHash(dbHash: string, chainHash: string): boolean {
-  return normalizeHex(dbHash) === normalizeHex(chainHash);
-}
-
-export function uuidToHex(cameraId: string): string {
-  return cameraId.replace(/-/g, "").toLowerCase();
-}
-
-export function uuidToBytes16(cameraId: string): string {
-  const hex = uuidToHex(cameraId);
-  if (!/^[0-9a-f]{32}$/.test(hex)) {
-    throw new Error("invalid camera id");
-  }
-  return `0x${hex}`;
-}
-
-function bytesToHex(value: string, hexChars: number): string {
-  return value.replace(/^0x/i, "").toLowerCase().padStart(hexChars, "0").slice(0, hexChars);
-}
-
-function normalizeHex(value: string): string {
-  return value.trim().toLowerCase().replace(/^0x/, "");
-}
+/** 24-hour local time, so 16:30 is not shown as 4:30 PM. */
 
 const localDateTime: Intl.DateTimeFormatOptions = {
   year: "numeric",
@@ -359,6 +10,12 @@ const localDateTime: Intl.DateTimeFormatOptions = {
   hourCycle: "h23",
 };
 
+const localDate: Intl.DateTimeFormatOptions = {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+};
+
 const localTime: Intl.DateTimeFormatOptions = {
   hour: "2-digit",
   minute: "2-digit",
@@ -366,7 +23,38 @@ const localTime: Intl.DateTimeFormatOptions = {
   hourCycle: "h23",
 };
 
-/** 24-hour local time, so 16:30 is not shown as 4:30 PM. */
+export type LocalWindowParts = {
+  date: string;
+  time: string;
+};
+
+/** Same local clock as formatLocalWindow, split for the player overlay. */
+export function formatLocalWindowParts(
+  startedAt: string,
+  endedAt?: string
+): LocalWindowParts {
+  const start = new Date(startedAt);
+  const startDate = start.toLocaleDateString(undefined, localDate);
+  const startTime = start.toLocaleTimeString(undefined, localTime);
+  if (!endedAt) {
+    return { date: startDate, time: startTime };
+  }
+  const end = new Date(endedAt);
+  const endTime = end.toLocaleTimeString(undefined, localTime);
+  const date =
+    start.toDateString() === end.toDateString()
+      ? startDate
+      : `${startDate} – ${end.toLocaleDateString(undefined, localDate)}`;
+  return { date, time: `${startTime} – ${endTime}` };
+}
+
+export function missingRecordingMessage(
+  startedAt: string,
+  endedAt: string
+): string {
+  return `No recorded video is available for ${formatLocalWindow(startedAt, endedAt)}. Playback continues with the next available segment.`;
+}
+
 export function formatLocalWindow(startedAt: string, endedAt?: string): string {
   const start = new Date(startedAt);
   const startText = start.toLocaleString(undefined, localDateTime);
@@ -379,16 +67,4 @@ export function formatLocalWindow(startedAt: string, endedAt?: string): string {
       ? end.toLocaleTimeString(undefined, localTime)
       : end.toLocaleString(undefined, localDateTime);
   return `${startText} – ${endText}`;
-}
-
-/** Clock minute for a gap, or the saved window when a clip is attached. */
-export function formatVerifySlot(slotIso: string, endedAt?: string): string {
-  if (endedAt) {
-    return formatLocalWindow(slotIso, endedAt);
-  }
-  const endMs = Date.parse(slotIso) + SEGMENT_MS;
-  if (!Number.isFinite(endMs)) {
-    return formatLocalWindow(slotIso);
-  }
-  return formatLocalWindow(slotIso, new Date(endMs).toISOString());
 }

@@ -7,8 +7,15 @@ from uuid import UUID
 
 import pytest
 
+from web3.exceptions import (
+    ContractCustomError,
+    ContractLogicError,
+    ContractPanicError,
+)
+
 from app.services.chain_anchor import (
     ChainAnchorError,
+    ChainAnchorNotFoundError,
     SegmentAnchor,
     SegmentAnchorRequest,
     anchor_segment,
@@ -66,10 +73,7 @@ def test_timeout_and_gas_errors_are_retryable() -> None:
 
 
 def test_anchor_segment_returns_tx_hash() -> None:
-    assert (
-        anchor_segment(_request(), send_once=lambda _req: TX, max_attempts=1)
-        == TX
-    )
+    assert anchor_segment(_request(), send_once=lambda _req: TX, max_attempts=1) == TX
 
 
 def test_anchor_retries_timeout_then_succeeds() -> None:
@@ -152,7 +156,7 @@ def test_decode_get_segment_mapping() -> None:
 
 
 def test_decode_empty_cid_is_not_found() -> None:
-    with pytest.raises(ChainAnchorError, match="AnchorNotFound"):
+    with pytest.raises(ChainAnchorNotFoundError, match="AnchorNotFound"):
         decode_segment_anchor(
             (
                 camera_id_to_bytes16(CAMERA_ID),
@@ -177,9 +181,70 @@ def test_get_segment_returns_on_chain_fields() -> None:
     assert anchored.segment_hash == HASH
 
 
-def test_get_segment_raises_when_anchor_missing() -> None:
+def test_get_segment_text_mentioning_anchor_not_found_stays_generic() -> None:
     def missing(_camera_id: UUID, _started_at: datetime) -> SegmentAnchor:
         raise RuntimeError("AnchorNotFound")
 
-    with pytest.raises(ChainAnchorError, match="AnchorNotFound"):
+    with pytest.raises(ChainAnchorError) as caught:
         get_segment(CAMERA_ID, STARTED, call_once=missing)
+    assert not isinstance(caught.value, ChainAnchorNotFoundError)
+    assert str(caught.value).startswith("On-chain segment read failed")
+    assert "AnchorNotFound" in str(caught.value)
+
+
+def _boom(exc: BaseException):
+    def call(_camera_id: UUID, _started_at: datetime) -> SegmentAnchor:
+        raise exc
+
+    return call
+
+
+def _read_failure(exc: BaseException) -> ChainAnchorError:
+    with pytest.raises(ChainAnchorError) as caught:
+        get_segment(CAMERA_ID, STARTED, call_once=_boom(exc))
+    return caught.value
+
+
+def test_get_segment_custom_error_selector_is_anchor_not_found() -> None:
+    error = _read_failure(ContractCustomError("0x46716752", data="0x46716752"))
+    assert isinstance(error, ChainAnchorNotFoundError)
+    assert str(error) == "AnchorNotFound"
+
+
+def test_get_segment_nested_revert_data_is_anchor_not_found() -> None:
+    error = _read_failure(
+        ContractLogicError(
+            "execution reverted",
+            data={
+                "message": "execution reverted",
+                "data": "0x46716752",
+            },
+        )
+    )
+    assert isinstance(error, ChainAnchorNotFoundError)
+    assert str(error) == "AnchorNotFound"
+
+
+def test_get_segment_other_custom_error_stays_generic() -> None:
+    error = _read_failure(ContractCustomError("0x30cd7471", data="0x30cd7471"))
+    assert str(error).startswith("On-chain segment read failed")
+    assert "AnchorNotFound" not in str(error)
+
+
+def test_get_segment_error_string_and_panic_stay_generic() -> None:
+    error_string = "0x08c379a0" + f"{32:064x}" + f"{4:064x}" + "6661696c".ljust(64, "0")
+    panic = "0x4e487b71" + f"{1:064x}"
+    for exc in (
+        ContractLogicError("execution reverted: fail", data=error_string),
+        ContractPanicError("Panic error 0x01: Assert evaluates to false.", data=panic),
+    ):
+        error = _read_failure(exc)
+        assert str(error).startswith("On-chain segment read failed")
+        assert "AnchorNotFound" not in str(error)
+
+
+def test_get_segment_timeout_and_connection_failures_stay_generic() -> None:
+    for exc in (TimeoutError("timed out"), ConnectionError("connection refused")):
+        error = _read_failure(exc)
+        assert str(error).startswith("On-chain segment read failed")
+        assert "AnchorNotFound" not in str(error)

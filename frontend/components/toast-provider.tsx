@@ -9,7 +9,14 @@ import {
   type ReactNode,
 } from "react";
 
-export type ToastVariant = "error" | "success";
+import {
+  toastClassName,
+  toastLabel,
+  toastLabelClassName,
+  type ToastVariant,
+} from "@/lib/toast-variants";
+
+export type { ToastVariant };
 
 export type Toast = {
   id: string;
@@ -24,13 +31,6 @@ type ToastContextValue = {
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 const DISMISS_MS = 5000;
-
-function toastStyles(variant: ToastVariant): string {
-  if (variant === "error") {
-    return "border-landing-warn/40 bg-white text-landing-ink shadow-md";
-  }
-  return "border-landing-accent/35 bg-white text-landing-ink shadow-md";
-}
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -67,16 +67,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={toast.id}
             role="alert"
-            className={`pointer-events-auto rounded-xl border px-4 py-3 text-sm ${toastStyles(toast.variant)}`}
+            className={`pointer-events-auto rounded-xl border px-4 py-3 text-sm ${toastClassName(toast.variant)}`}
           >
-            <span
-              className={`mb-1 block text-xs font-semibold uppercase tracking-wide ${
-                toast.variant === "error"
-                  ? "text-landing-warn"
-                  : "text-landing-accent"
-              }`}
-            >
-              {toast.variant === "error" ? "Error" : "Success"}
+            <span className={toastLabelClassName(toast.variant)}>
+              {toastLabel(toast.variant)}
             </span>
             {toast.message}
           </div>

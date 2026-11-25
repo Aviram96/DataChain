@@ -80,18 +80,87 @@ def test_register_duplicate_email(client: TestClient) -> None:
 def test_register_password_too_short(client: TestClient) -> None:
     response = client.post(
         "/auth/register",
-        json={"email": "short-pw@example.com", "password": "short"},
+        json={"email": "short-pw@example.com", "password": "1234567"},
     )
     assert response.status_code == 422
+    assert "at least 8" in response.text
 
 
-def test_register_password_exceeds_bcrypt_bytes(client: TestClient) -> None:
-    # 73 ASCII bytes exceeds bcrypt's 72-byte limit enforced in UserRegister.
+@pytest.mark.parametrize(
+    ("label", "password"),
+    [
+        ("letters", "abcdefgh"),
+        ("uppercase", "ABCDEFGH"),
+        ("numbers", "12345678"),
+        ("symbols", "!@#$%^&*"),
+        ("letters-64", "a" * 64),
+        ("numbers-64", "1" * 64),
+        ("symbols-64", "!" * 64),
+    ],
+)
+def test_register_accepts_passwords_within_length_limit(
+    client: TestClient,
+    label: str,
+    password: str,
+) -> None:
+    email = f"{label}@example.com"
     response = client.post(
         "/auth/register",
-        json={"email": "long-pw@example.com", "password": "x" * 73},
+        json={"email": email, "password": password},
+    )
+    assert response.status_code == 201
+    login = client.post(
+        "/auth/login",
+        json={"email": email, "password": password},
+    )
+    assert login.status_code == 200
+    assert login.json()["token_type"] == "bearer"
+
+
+@pytest.mark.parametrize(
+    ("label", "password"),
+    [
+        ("hebrew", "א" * 8),
+        ("emoji", "abc😀defg"),
+        ("leading-space", " abcdefg"),
+        ("trailing-space", "abcdefgh "),
+    ],
+)
+def test_register_rejects_unsupported_password_characters(
+    client: TestClient,
+    label: str,
+    password: str,
+) -> None:
+    response = client.post(
+        "/auth/register",
+        json={"email": f"{label}@example.com", "password": password},
     )
     assert response.status_code == 422
+    assert "English letters" in response.text
+
+
+def test_register_strips_email_without_changing_password(client: TestClient) -> None:
+    spaced = client.post(
+        "/auth/register",
+        json={"email": "  kept@example.com  ", "password": "abcdefgh "},
+    )
+    assert spaced.status_code == 422
+
+    response = client.post(
+        "/auth/register",
+        json={"email": "  kept@example.com  ", "password": "abcdefgh"},
+    )
+    assert response.status_code == 201
+    assert response.json()["email"] == "kept@example.com"
+
+
+def test_register_password_too_long(client: TestClient) -> None:
+    response = client.post(
+        "/auth/register",
+        json={"email": "long-pw@example.com", "password": "x" * 65},
+    )
+    assert response.status_code == 422
+    assert "at most 64" in response.text
 
 
 def test_login_success(client: TestClient) -> None:

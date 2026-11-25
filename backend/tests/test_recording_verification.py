@@ -14,7 +14,14 @@ from sqlalchemy.pool import StaticPool
 
 from app.database import Base
 from app.models.video_record import VideoRecord
-from app.services.chain_anchor import ChainAnchorError, SegmentAnchor
+from web3.exceptions import ContractCustomError
+
+from app.services.chain_anchor import (
+    ChainAnchorError,
+    ChainAnchorNotFoundError,
+    SegmentAnchor,
+    get_segment,
+)
 from app.services.recording_download import RecordingDownloadError
 from app.services.recording_verification import (
     RecordingVerificationError,
@@ -258,7 +265,7 @@ def test_missing_anchor_is_missing_not_tampered(
         started,
         ended,
         work_dir=tmp_path,
-        read_anchor=_reader_for(record, ChainAnchorError("AnchorNotFound")),
+        read_anchor=_reader_for(record, ChainAnchorNotFoundError()),
         fetch_file=lambda cid, dest: fetched.append(cid),
     )
 
@@ -271,7 +278,7 @@ def test_missing_anchor_is_missing_not_tampered(
     assert fetched == []
 
 
-def test_wrapped_anchor_not_found_is_missing(
+def test_generic_error_mentioning_anchor_not_found_is_failed(
     db_session: Session, tmp_path: Path
 ) -> None:
     started = datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc)
@@ -291,7 +298,42 @@ def test_wrapped_anchor_not_found_is_missing(
         fetch_file=_fetch_bytes(FILE_BYTES),
     )
 
+    assert report.overall == "failed"
+    assert report.segments[0].status == "failed"
+    assert "could not be completed" in report.segments[0].detail
+    assert report.eligible == ()
+
+
+def test_normalized_anchor_not_found_is_missing_not_failed(
+    db_session: Session, tmp_path: Path
+) -> None:
+    started = datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc)
+    ended = started + timedelta(seconds=60)
+    record = _add_record(db_session, started, ended)
+
+    def missing(_camera_id: UUID, _started_at: datetime) -> SegmentAnchor:
+        raise ContractCustomError("0x46716752", data="0x46716752")
+
+    def read(camera_id: UUID, started_at: datetime) -> SegmentAnchor:
+        assert camera_id == record.camera_id
+        assert _utc(started_at) == _utc(record.started_at)
+        return get_segment(camera_id, started_at, call_once=missing)
+
+    report = verify_recording_range(
+        db_session,
+        CAMERA_ID,
+        started,
+        ended,
+        work_dir=tmp_path,
+        read_anchor=read,
+        fetch_file=_fetch_bytes(FILE_BYTES),
+    )
+
+    assert report.overall == "missing"
     assert report.segments[0].status == "missing"
+    assert (
+        report.segments[0].detail == "No blockchain anchor exists for this recording."
+    )
     assert report.eligible == ()
 
 
@@ -469,6 +511,98 @@ def test_touching_ranges_have_no_missing_interval(
     assert report.overall == "verified"
     assert report.missing_intervals == ()
     assert len(report.eligible) == 2
+
+
+@pytest.mark.parametrize(
+    ("gap", "continuous"),
+    [
+        (timedelta(0), True),
+        (timedelta(microseconds=1), True),
+        (timedelta(microseconds=999), True),
+        (timedelta(milliseconds=1), False),
+        (timedelta(seconds=1), False),
+        (timedelta(seconds=5), False),
+    ],
+)
+def test_coverage_ignores_seams_shorter_than_one_millisecond(
+    db_session: Session,
+    tmp_path: Path,
+    gap: timedelta,
+    continuous: bool,
+) -> None:
+    start = datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc)
+    first_end = start + timedelta(seconds=30)
+    second_start = first_end + gap
+    second_end = second_start + timedelta(seconds=30)
+    first = _add_record(db_session, start, first_end)
+    second = _add_record(db_session, second_start, second_end)
+    anchors = {
+        _utc(first.started_at): _anchor_for(first),
+        _utc(second.started_at): _anchor_for(second),
+    }
+
+    report = verify_recording_range(
+        db_session,
+        CAMERA_ID,
+        start,
+        second_end,
+        work_dir=tmp_path,
+        read_anchor=lambda _camera_id, started_at: anchors[_utc(started_at)],
+        fetch_file=_fetch_bytes(FILE_BYTES),
+        hash_file=sha256_file,
+    )
+
+    assert [item.video_record_id for item in report.eligible] == [
+        first.id,
+        second.id,
+    ]
+    if continuous:
+        assert report.overall == "verified"
+        assert report.missing_intervals == ()
+    else:
+        assert report.overall == "missing"
+        assert len(report.missing_intervals) == 1
+        assert report.missing_intervals[0].started_at == first_end
+        assert report.missing_intervals[0].ended_at == second_start
+
+
+def test_november_17_microsecond_seam_stays_fully_verified(
+    db_session: Session, tmp_path: Path
+) -> None:
+    spans = [
+        (
+            datetime(2026, 11, 17, 11, 44, tzinfo=timezone.utc),
+            datetime(2026, 11, 17, 11, 44, 58, 333333, tzinfo=timezone.utc),
+        ),
+        (
+            datetime(2026, 11, 17, 11, 44, 58, 333333, tzinfo=timezone.utc),
+            datetime(2026, 11, 17, 11, 45, 56, 666666, tzinfo=timezone.utc),
+        ),
+        (
+            datetime(2026, 11, 17, 11, 45, 56, 666667, tzinfo=timezone.utc),
+            datetime(2026, 11, 17, 11, 46, 3, 333334, tzinfo=timezone.utc),
+        ),
+    ]
+    records = [_add_record(db_session, start, end) for start, end in spans]
+    anchors = {_utc(record.started_at): _anchor_for(record) for record in records}
+
+    report = verify_recording_range(
+        db_session,
+        CAMERA_ID,
+        spans[0][0],
+        spans[-1][1],
+        work_dir=tmp_path,
+        read_anchor=lambda _camera_id, started_at: anchors[_utc(started_at)],
+        fetch_file=_fetch_bytes(FILE_BYTES),
+        hash_file=sha256_file,
+    )
+
+    assert report.overall == "verified"
+    assert report.missing_intervals == ()
+    assert report.excluded_intervals == ()
+    assert [item.video_record_id for item in report.eligible] == [
+        record.id for record in records
+    ]
 
 
 def test_partial_overlap_checks_only_overlapping_segments(

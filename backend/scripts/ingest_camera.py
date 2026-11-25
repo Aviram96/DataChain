@@ -9,6 +9,7 @@ Run from backend/ with the venv activated and Postgres available:
 
     python scripts/ingest_camera.py --camera-id UUID
     python scripts/ingest_camera.py --all
+    python scripts/ingest_camera.py --supervise
 
 Requires FFmpeg on PATH (https://ffmpeg.org/download.html).
 """
@@ -29,18 +30,27 @@ _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 if str(_BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(_BACKEND_ROOT))
 
-from app.db.session import get_sessionmaker
-from app.services.camera_ingest import (
+from app.db.session import get_engine, get_sessionmaker  # noqa: E402
+from app.services.camera_ingest import (  # noqa: E402
     CameraIngest,
     CameraIngestConfig,
     ingest_config_for_camera,
     ingest_configs_for_all_active,
 )
-from app.services.camera_stream import CameraStreamError
-from app.services.cctv_feed_simulator import DEFAULT_FFMPEG
-from app.services.video_chunker import resolve_chunk_duration_seconds, resolve_temp_dir
+from app.services.camera_stream import CameraStreamError  # noqa: E402
+from app.services.cctv_feed_simulator import DEFAULT_FFMPEG  # noqa: E402
+from app.services.ingest_supervisor import (  # noqa: E402
+    IngestSupervisor,
+    PostgresIngestLock,
+    install_supervisor_signals,
+    manual_ingest_available,
+)
+from app.services.video_chunker import (  # noqa: E402
+    resolve_chunk_duration_seconds,
+    resolve_temp_dir,
+)
 
-import app.models  # noqa: F401  — register ORM mappers
+import app.models  # noqa: E402,F401  — register ORM mappers
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,7 +64,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Receive camera streams, write 1-minute MP4 segments under temp/, "
             "and keep them staged until processing succeeds. "
             "Temp files are deleted only after processing succeeds. "
-            "Unexpected FFmpeg stops restart up to a cap, then the camera is marked offline."
+            "Unexpected FFmpeg stops restart up to a cap, then the camera "
+            "is marked offline."
         ),
     )
     target = parser.add_mutually_exclusive_group(required=True)
@@ -67,6 +78,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--all",
         action="store_true",
         help="Ingest every active (non-deleted) camera",
+    )
+    target.add_argument(
+        "--supervise",
+        action="store_true",
+        help=(
+            "Watch active cameras and record each one. New and restored "
+            "cameras are picked up; archived cameras stop. Does not run "
+            "inside the API."
+        ),
     )
     parser.add_argument(
         "--ffmpeg",
@@ -101,16 +121,26 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _run_one(config: CameraIngestConfig, session_factory) -> int:
-    return CameraIngest(config, session_factory=session_factory).run_until_signal()
+def _run_one(config: CameraIngestConfig, session_factory, lock) -> int:
+    if not manual_ingest_available(lock, config.camera_id):
+        return 1
+    try:
+        return CameraIngest(config, session_factory=session_factory).run_until_signal()
+    finally:
+        lock.release(config.camera_id)
 
 
-def _run_all(configs: list[CameraIngestConfig], session_factory) -> int:
+def _run_all(configs: list[CameraIngestConfig], session_factory, lock) -> int:
     if not configs:
         logging.error("No active cameras to ingest.")
         return 1
+    claimed = [
+        config for config in configs if manual_ingest_available(lock, config.camera_id)
+    ]
+    if not claimed:
+        return 1
     ingests = [
-        CameraIngest(config, session_factory=session_factory) for config in configs
+        CameraIngest(config, session_factory=session_factory) for config in claimed
     ]
     threads = [
         threading.Thread(
@@ -130,9 +160,37 @@ def _run_all(configs: list[CameraIngestConfig], session_factory) -> int:
         logging.info("Stopping camera ingest")
         for ingest in ingests:
             ingest.stop()
-        for thread in threads:
+    finally:
+        for ingest, thread in zip(ingests, threads, strict=True):
             thread.join(timeout=10)
+            if thread.is_alive():
+                logging.error(
+                    "Ingest for camera %s did not stop; keeping its lock",
+                    ingest.camera_id,
+                )
+                continue
+            lock.release(ingest.camera_id)
     return 0
+
+
+def _run_supervise(
+    session_factory,
+    lock,
+    ffmpeg: str,
+    temp_dir: Path,
+    duration: int,
+    loop_source: bool,
+) -> int:
+    supervisor = IngestSupervisor(
+        session_factory=session_factory,
+        lock=lock,
+        temp_dir=temp_dir,
+        ffmpeg_executable=ffmpeg,
+        segment_duration_seconds=duration,
+        loop_source=loop_source,
+    )
+    install_supervisor_signals(supervisor)
+    return supervisor.run()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -141,6 +199,23 @@ def main(argv: list[str] | None = None) -> int:
     temp_dir = resolve_temp_dir(args.temp_dir)
     duration = resolve_chunk_duration_seconds(args.duration)
     SessionLocal = get_sessionmaker()
+    lock = PostgresIngestLock(get_engine())
+    if args.supervise:
+        try:
+            return _run_supervise(
+                SessionLocal,
+                lock,
+                ffmpeg,
+                temp_dir,
+                duration,
+                args.loop,
+            )
+        except FileNotFoundError:
+            logging.error(
+                "FFmpeg not found (%r). Install FFmpeg and ensure it is on PATH.",
+                ffmpeg,
+            )
+            return 127
     db = SessionLocal()
     one: CameraIngestConfig | None = None
     many: list[CameraIngestConfig] | None = None
@@ -174,8 +249,8 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if one is not None:
-            return _run_one(one, SessionLocal)
-        return _run_all(many or [], SessionLocal)
+            return _run_one(one, SessionLocal, lock)
+        return _run_all(many or [], SessionLocal, lock)
     except FileNotFoundError:
         logging.error(
             "FFmpeg not found (%r). Install FFmpeg and ensure it is on PATH.",

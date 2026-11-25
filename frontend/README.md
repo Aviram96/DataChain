@@ -30,15 +30,15 @@ Dev server defaults to
 
 ## Environment variables
 
-Copy `frontend/.env.example` to `frontend/.env.local` only if you need a custom API URL or Polygon RPC/contract.
+Copy `frontend/.env.example` to `frontend/.env.local` only if you need a custom API URL.
 
 By default, the dev server proxies **`/api/*`** → `http://127.0.0.1:8000/*` (see `next.config.ts`), so login/register avoid browser CORS issues.
 
 **Watch playback (CP-E.C5):** choosing a saved time plays the contiguous stretch as one sequence. Each segment is loaded from `GET /cameras/{id}/recordings/{record_id}/playback` after the API verifies it. The next segment is verified before it is preloaded. A segment that fails verification is not played. The page does not open a public IPFS gateway URL.
 
-**Verify (CP-E.C7 / C8 / P8):** the camera page compares expected minutes’ API CID/hash/times to on-chain `getSegment` via **ethers.js**. **Verify** checks the whole searched range; **Verify part** checks a tighter start/end inside that range. After the on-screen report exists, the browser **POSTs** it to `/cameras/{id}/verification-attempts` (audit trail; a save failure is a toast, not Tampered). Compact history is on the same camera page. The browser calls same-origin **`/amoy-rpc`**, rewritten to `NEXT_PUBLIC_POLYGON_RPC_URL` (default `https://polygon-amoy.drpc.org`). Contract default is the live Amoy Datachain address; override with `NEXT_PUBLIC_DATACHAIN_CONTRACT_ADDRESS` if you redeploy. Transaction hashes open on Polygonscan (`NEXT_PUBLIC_POLYGONSCAN_TX_BASE`). Restart `npm run dev` after changing `NEXT_PUBLIC_*` values.
+**Verification:** the camera page does not read the blockchain. Watch and Download ask the API to verify each segment. A segment that fails verification is not played. The page does not show a separate Verify button or a verification-history list.
 
-**Download (CP-E.C6):** **Download** asks the API to verify the selected range and save an `.mp4` of the verified portions only. The response also includes the verification report. A range with no verified segment saves nothing. Use the open recording, **Download part**, or a per-row Download. The backend needs FFmpeg on PATH.
+**Download:** after Watch opens a range, **Download** in the player asks the API to verify that whole range and save an `.mp4` of the verified portions only. A range with no verified segment saves nothing. The backend needs FFmpeg on PATH.
 
 **Before using `/login` or `/register`, start the backend:**
 
@@ -61,10 +61,10 @@ Quick API check: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health) sh
 - `/` — Marketing landing (no top toolbar): project / problem / solution + Sign up / Log in; signed-in users redirect to `/cameras`
 - `/login` — Log in (error toast on wrong password); header updates after sign-in
 - `/register` — Sign up (error toast on duplicate email)
-- Header (app pages) — When signed in: **Signed in as** email + **Log out**; when signed out: Log in / Sign up
+- Header (app pages) — Brand label **DataChain** (not a link). When signed in: **Cameras**, **Archive**, **Add camera**, and an account menu with the email and **Log out**. When signed out: Log in / Sign up
 - `/cameras` — Camera dashboard (main app surface after auth)
 - `/cameras/new`, `/cameras/[id]`, `/cameras/[id]/edit` — add, detail (recordings search, Watch, Verify, Download, verification history), edit
-- Camera **Online/Offline** badge; when ingest hits the FFmpeg restart cap, `offline_reason` is `ingest_failed`, `ingest_offline_at` is set, and the card/detail explain that footage may be missing **since** that time (CP-C.C1)
+- Camera **Online/Offline** badge is whether the stream can be reached, or whether an older ingest run gave up after its FFmpeg restart cap (`offline_reason` `ingest_failed`, with **since** on the card). It does not mean a recording is in progress. Automatic recording is a separate supervisor: from `backend/`, `.venv/bin/python scripts/ingest_camera.py --supervise`. While that process is running, a new or restored active camera is recorded when its stream is available, and Archive stops that recording. Restore does not need a manual start. Historical playback and download stay available after Archive.
 - `/project-status` — Internal/dev status page (not linked from landing)
 
 Expired or invalid JWTs clear `datachain_access_token` in localStorage and redirect to `/login` (toast on protected pages). Session is checked on app load via `GET /auth/me` and on any authenticated API call that returns 401.

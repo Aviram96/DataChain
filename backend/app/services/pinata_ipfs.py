@@ -39,9 +39,7 @@ def upload_segment(
 
     token = jwt if jwt is not None else get_pinata_jwt()
     timeout = (
-        timeout_seconds
-        if timeout_seconds is not None
-        else get_pinata_timeout_seconds()
+        timeout_seconds if timeout_seconds is not None else get_pinata_timeout_seconds()
     )
 
     logger.info("Uploading segment %s (%s bytes) to Pinata", resolved.name, size)

@@ -150,7 +150,7 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **What it is:** **TypeScript** is **JavaScript** with **static types**: the editor and compiler catch many mistakes (wrong property names, missing fields) before runtime.
 
-**Why Datachain uses it:** As the UI grows, types reduce bugs in API shapes, props, and on-chain verification glue (**ethers.js** later).
+**Why Datachain uses it:** As the UI grows, types reduce bugs in API shapes and component props. The website does not talk to the blockchain; the backend verifies recordings.
 
 **Where it shows up:** `frontend/**/*.tsx`, `frontend/tsconfig.json`; Hardhat config and tests under `contracts/` (`hardhat.config.ts`, `test/`).
 
@@ -190,7 +190,7 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **What it is:** **Viem** is a **TypeScript library** for talking to Ethereum-compatible networks: reading state, sending transactions, and working with contract ABIs in a type-safe way.
 
-**Why Datachain uses it:** Hardhat 3’s default toolbox uses Viem (instead of **ethers.js**) for **compile-time** test and script code in `contracts/`. The **Next.js** app can still use **ethers.js** later for wallet and browser verification, as in `ROADMAP.md`—the two libraries serve different layers of the stack.
+**Why Datachain uses it:** Hardhat 3’s default toolbox uses Viem for **compile-time** test and script code in `contracts/`. The website does not use a browser blockchain library. Recording checks run in the backend.
 
 **Where it shows up:** `contracts/` (via `@nomicfoundation/hardhat-toolbox-viem`); not required in `frontend/` unless you choose to adopt it there.
 
@@ -224,7 +224,7 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** CCTV ingest needs **fixed-duration chunks** (about one minute) for IPFS uploads and chain anchors. FFmpeg is the standard way to turn a continuous feed (real RTSP or a **looped sample MP4**) into those segments without storing one giant file in the API process.
 
-**Where it shows up:** Epic 5 starts with `backend/scripts/simulate_cctv_feed.py` and `backend/app/services/cctv_feed_simulator.py` (loop a local `.mp4` at real-time pace to stdout). **Slice C / CP-C.P2–P8** receive each registered camera URL via `backend/scripts/ingest_camera.py` and write **1-minute** `.mp4` files under `backend/temp/<camera-id>/` using `backend/app/services/video_chunker.py`. Closed segments are checked with **ffprobe** (a companion tool in the FFmpeg install) plus a SHA-256 fingerprint in `backend/app/services/segment_integrity.py` before later stages, and stay staged in `temp/` until processing succeeds (`backend/app/services/segment_staging.py`). If FFmpeg stops unexpectedly, `backend/app/services/ffmpeg_supervisor.py` restarts it (capped for camera ingest) and ingest can mark the camera offline. **`backend/scripts/chunk_cctv_feed.py`** can still chunk a local file the same way. **Slice E / CP-E.P10** uses FFmpeg again to **join verified segments** into one download file (`backend/app/services/recording_download.py`). Unverified files are left out. Install FFmpeg on the host; see `backend/README.md`.
+**Where it shows up:** Epic 5 starts with `backend/scripts/simulate_cctv_feed.py` and `backend/app/services/cctv_feed_simulator.py` (loop a local `.mp4` at real-time pace to stdout). **Slice C / CP-C.P2–P8** receive each registered camera URL via `backend/scripts/ingest_camera.py` and write **1-minute** `.mp4` files under `backend/temp/<camera-id>/` using `backend/app/services/video_chunker.py`. Automatic recording is a separate supervisor process, not part of the API: from `backend/`, `.venv/bin/python scripts/ingest_camera.py --supervise`. It notices new active cameras and cameras restored under the same id, starts FFmpeg when the RTSP source accepts a connection, retries when it does not, and stops a camera when it is archived. The dashboard Online/Offline badge is reachability, not proof that a minute is being recorded. Closed segments are checked with **ffprobe** (a companion tool in the FFmpeg install) plus a SHA-256 fingerprint in `backend/app/services/segment_integrity.py` before later stages, and stay staged in `temp/` until processing succeeds (`backend/app/services/segment_staging.py`). If FFmpeg stops unexpectedly, `backend/app/services/ffmpeg_supervisor.py` restarts it (capped for camera ingest) and ingest can mark the camera offline. **`backend/scripts/chunk_cctv_feed.py`** can still chunk a local file the same way. **Slice E / CP-E.P10** uses FFmpeg again to **join verified segments** into one download file (`backend/app/services/recording_download.py`). Unverified files are left out. Install FFmpeg on the host; see `backend/README.md`.
 
 ### SHA-256 (segment fingerprint)
 
@@ -256,7 +256,7 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** One-minute CCTV clips stay **off-chain**. The CID uniquely identifies the bytes; later the same CID is stored in PostgreSQL and on Polygon so verification can detect a swapped file.
 
-**Where it shows up:** `backend/app/services/pinata_ipfs.py`, `backend/scripts/upload_segment_ipfs.py`, ingest via `ingest_segment_processor.py`, `PINATA_JWT` in `backend/.env.example`. Watch and download ask the API to verify overlapping segments and then serve only files that matched (`GET /cameras/{id}/recordings/{record_id}/playback`, `GET /cameras/{id}/recordings/download`). The API retrieves those files through the public gateway (`IPFS_GATEWAY` in `backend/.env.example`).
+**Where it shows up:** `backend/app/services/pinata_ipfs.py`, `backend/scripts/upload_segment_ipfs.py`, ingest via `ingest_segment_processor.py`, `PINATA_JWT` in `backend/.env.example`. Watch and download ask the API to verify overlapping segments and then serve only files that matched (`GET /cameras/{id}/recordings/{record_id}/playback`, `GET /cameras/{id}/recordings/download`). The API retrieves those files through the public gateway (`IPFS_GATEWAY` in `backend/.env.example`). Permanent deletion of an empty archived camera does not unpin IPFS content. Removing pins for cameras that have recordings is future work.
 
 ### Web3.py (Polygon anchoring)
 
@@ -264,15 +264,7 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** The backend must record each minute’s CID and hash on-chain. If the RPC times out or gas is too low, the write helper **retries** and **does not treat the segment as proven**; the temp file can stay for another attempt. A separate **read** helper can load the same metadata from the contract **without PostgreSQL**.
 
-**Where it shows up:** `backend/app/services/chain_anchor.py` (`anchor_segment`, `get_segment`), `backend/scripts/anchor_segment.py`, ingest via `ingest_segment_processor.py`, ABI in `backend/app/contracts/datachain_abi.py`. Watch and download call this read helper before serving a file (`recording_verification.py`). The separate Verify button still uses **ethers.js** in the browser.
-
-### ethers.js (browser verification)
-
-**What it is:** **ethers.js** is a JavaScript library the web app uses to talk to an Ethereum-compatible chain from the **browser**. Datachain uses it only to **read** `getSegment` on Polygon **Amoy** (no wallet signature, no private key in the frontend).
-
-**Why Datachain uses it:** Integrity is something a user can check themselves: the page loads each minute’s CID and hash from the API, then asks the smart contract for the same fields and compares them. A green **Verified** badge means they match; a red **Tampered** badge means they do not. If the RPC node cannot be reached, the result is **Failed to verify**, not tampered.
-
-**Where it shows up:** `frontend/lib/verify-chain.ts`, `frontend/lib/datachain-abi.ts`, camera recordings Verify UI (`frontend/components/camera-recordings.tsx`). After each in-browser report, the page POSTs the outcome for the audit trail (`frontend/lib/verification-api.ts`). RPC is proxied at `/amoy-rpc` (see `frontend/next.config.ts` and `frontend/.env.example`).
+**Where it shows up:** `backend/app/services/chain_anchor.py` (`anchor_segment`, `get_segment`), `backend/scripts/anchor_segment.py`, ingest via `ingest_segment_processor.py`, ABI in `backend/app/contracts/datachain_abi.py`. Watch and Download call this read helper before serving a file (`recording_verification.py`). The website does not read the contract itself.
 
 ### Development mocks for IPFS and blockchain (later slices)
 

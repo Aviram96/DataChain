@@ -1,11 +1,16 @@
 /** Matches backend ``UserRegister`` password rules in ``app/schemas/auth.py``. */
 
 export const PASSWORD_MIN_LENGTH = 8;
-export const PASSWORD_MAX_LENGTH = 200;
-export const PASSWORD_MAX_UTF8_BYTES = 72;
+export const PASSWORD_MAX_LENGTH = 64;
+
+/** Printable ASCII except space: letters, numbers, and special characters. */
+const PASSWORD_ALLOWED = /^[!-~]+$/;
 
 export const PASSWORD_REQUIREMENTS_HINT =
-  "At least 8 characters, at most 200 characters, and at most 72 bytes (UTF-8).";
+  "Use 8–64 characters. English letters, numbers, and special characters are allowed.";
+
+const UNSUPPORTED_CHARACTERS =
+  "Password can contain only English letters, numbers, and special characters.";
 
 /**
  * Returns a user-facing error message when the password fails requirements,
@@ -16,10 +21,10 @@ export function passwordRequirementsError(password: string): string | null {
     return "Password must be at least 8 characters.";
   }
   if (password.length > PASSWORD_MAX_LENGTH) {
-    return "Password must be at most 200 characters.";
+    return "Password must be at most 64 characters.";
   }
-  if (new TextEncoder().encode(password).length > PASSWORD_MAX_UTF8_BYTES) {
-    return "Password must be at most 72 bytes (UTF-8).";
+  if (!PASSWORD_ALLOWED.test(password)) {
+    return UNSUPPORTED_CHARACTERS;
   }
   return null;
 }

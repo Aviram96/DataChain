@@ -19,7 +19,11 @@ from app.deps import get_db
 from app.main import app
 from app.models.video_record import VideoRecord
 from app.routers.recordings import _CleanupFileResponse
-from app.services.chain_anchor import ChainAnchorError, SegmentAnchor
+from app.services.chain_anchor import (
+    ChainAnchorError,
+    ChainAnchorNotFoundError,
+    SegmentAnchor,
+)
 from app.services.recording_download import RecordingDownloadError
 
 import app.models as _models  # noqa: F401
@@ -142,7 +146,7 @@ def _install_sources(
         camera_id: UUID, started_at: datetime, **_kwargs: object
     ) -> SegmentAnchor:
         if mode == "missing":
-            raise ChainAnchorError("AnchorNotFound")
+            raise ChainAnchorNotFoundError()
         if mode == "failed":
             raise ChainAnchorError("On-chain segment read failed: timeout")
         ended = record.ended_at

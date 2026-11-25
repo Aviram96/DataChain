@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 CameraStatus = Literal["online", "offline"]
 CameraOfflineReason = Literal["ingest_failed", "unreachable"]
+CameraLifecycle = Literal["active", "archived"]
 
 
 class CameraBase(BaseModel):
@@ -69,6 +70,8 @@ class CameraPublic(BaseModel):
     status: CameraStatus
     offline_reason: CameraOfflineReason | None = None
     ingest_offline_at: datetime | None = None
+    lifecycle: CameraLifecycle
+    archived_at: datetime | None = None
 
 
 class CameraListResponse(BaseModel):
@@ -77,3 +80,17 @@ class CameraListResponse(BaseModel):
     page: int
     page_size: int
     pages: int
+
+
+class PermanentDeleteRequest(BaseModel):
+    """Exact camera name. Whitespace is not stripped, so it must match."""
+
+    model_config = ConfigDict(str_strip_whitespace=False)
+
+    confirm_name: str = Field(min_length=1, max_length=200)
+
+
+class PermanentDeleteResponse(BaseModel):
+    camera_id: UUID
+    deleted: bool
+    message: str

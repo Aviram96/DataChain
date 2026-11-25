@@ -142,11 +142,23 @@ def test_camera_crud_owner_scoped(client: TestClient) -> None:
     )
     assert deleted.status_code == 204
 
-    missing = client.get(
+    archived = client.get(
         f"/cameras/{camera_id}",
         headers=_auth_headers(token_a),
     )
-    assert missing.status_code == 404
+    assert archived.status_code == 200
+    assert archived.json()["lifecycle"] == "archived"
+    assert archived.json()["id"] == camera_id
+
+    hidden = client.get("/cameras", headers=_auth_headers(token_a))
+    assert hidden.status_code == 200
+    assert hidden.json()["total"] == 0
+
+    still_forbidden = client.get(
+        f"/cameras/{camera_id}",
+        headers=_auth_headers(token_b),
+    )
+    assert still_forbidden.status_code == 404
 
 
 def test_cameras_require_auth(client: TestClient) -> None:
@@ -246,8 +258,10 @@ def test_soft_delete_hides_camera_but_keeps_row(
     assert listed.status_code == 200
     assert listed.json()["total"] == 0
 
-    missing = client.get(f"/cameras/{camera_id}", headers=headers)
-    assert missing.status_code == 404
+    archived = client.get(f"/cameras/{camera_id}", headers=headers)
+    assert archived.status_code == 200
+    assert archived.json()["lifecycle"] == "archived"
+    assert archived.json()["id"] == camera_id
 
     db_session.expire_all()
     row = db_session.get(Camera, UUID(camera_id))
@@ -343,4 +357,3 @@ def test_ingest_offline_overrides_live_probe(
     assert listed.json()["total"] == 1
     assert listed.json()["items"][0]["offline_reason"] == "ingest_failed"
     assert listed.json()["items"][0]["ingest_offline_at"] is not None
-

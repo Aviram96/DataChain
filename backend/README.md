@@ -166,13 +166,20 @@ Both set: end must be after start (HTTP **400** otherwise). The camera detail pa
 
 ### Verification attempts (Slice E / CP-E.P8)
 
-`POST /cameras/{id}/verification-attempts` stores the **in-browser** Verify report (overall status, window, scope `full` | `partial` | `minute`, and per-minute rows). The API does **not** call `getSegment` or re-check the chain. Owner 404 matches recordings. Inverted window: **400**. More than 24 hours of minutes, empty minutes, or invalid scope/status: **422**. Persist is additive (an audit trail, not a replacement of the on-screen result).
+`POST /cameras/{id}/verification-attempts` stores a client-submitted report (overall status, window, scope `full` | `partial` | `minute`, and per-minute rows). That route does **not** call `getSegment` or re-check the chain. Owner 404 matches an active camera. Inverted window: **400**. More than 24 hours of minutes, empty minutes, or invalid scope/status: **422**.
 
-`GET /cameras/{id}/verification-attempts` is a thin paginated list of attempt headers (newest first; same `page` / `page_size` as recordings). Apply Alembic `20260917_000005`.
+Playback and download write their own audit row after `verify_recording_range` returns, including an archived camera the owner can still play. One request stores one `verification_attempts` row (`operation` `playback` or `download`) and one `verification_attempt_minutes` row per checked segment. Statuses include `verified`, `tampered`, `missing`, `unavailable`, and `failed`. A database error while saving that row is logged and does not change the playback or download response. Apply Alembic `20260917_000005` and `20261118_000006`.
 
-### Soft delete and unique names
+`GET /cameras/{id}/verification-attempts` is a thin paginated list of attempt headers for an active camera (newest first; same `page` / `page_size` as recordings). `operation` is null on older client-submitted rows.
 
-- `DELETE /cameras/{id}` sets **`deleted_at`** (soft delete). The camera disappears from the dashboard; the row remains so historical `video_records` are not destroyed (`ON DELETE RESTRICT` on `video_records.camera_id`).
+### Archive, restore, and unique names
+
+- `POST /cameras/{id}/archive` sets **`deleted_at`**. The camera leaves `GET /cameras`. The same row, recording IDs, CIDs, and chain anchors stay (`ON DELETE RESTRICT` on `video_records.camera_id`). A running `scripts/ingest_camera.py` stops that camera on its next active check and does not mark the stop as an ingest failure. `DELETE /cameras/{id}` performs this same archive and remains for the current dashboard.
+- `GET /cameras/archived` lists only the caller’s archived cameras (same paging, search, and sort as the active list).
+- The owner can still `GET /cameras/{id}` and list, play, and download that camera’s recordings. Playback and download still verify before serving bytes. `PATCH /cameras/{id}` returns **409** while the camera is archived. Another user’s camera returns **404**.
+- `POST /cameras/{id}/restore` clears `deleted_at` on that same camera id. The API does not start FFmpeg. A running supervisor discovers that same camera id and records when the stream is available. If another active camera already has that name, the response is **409** and the archived row is unchanged.
+- `POST /cameras/{id}/permanent-delete` removes only an archived camera that has no video records and no verification attempts. The JSON body must include `confirm_name` equal to the stored camera name. Another user's camera is **404**. An active camera is **409**. A camera that still has recordings or verification history is **409** with "This camera contains saved recordings or related data and cannot be permanently deleted." A name mismatch is **400**. Ongoing ingestion is **409**. The delete removes that camera row only. Recordings, verification history, IPFS objects, local files, and blockchain anchors are not modified. `DELETE /cameras/{id}` still archives.
+- **Archive** keeps the camera row and its historical recordings. **Restore** clears the archive and returns that same camera to the active list. **Delete permanently** is only for an archived camera with nothing saved under it.
 - Active cameras must have a **unique name per user** (case-insensitive); duplicates return HTTP 409.
 
 ### Stream attach for ingest (CP-B.P5)
@@ -216,7 +223,24 @@ python scripts/ingest_camera.py --camera-id 00000000-0000-0000-0000-000000000001
 
 # Every active camera (one FFmpeg process per camera)
 python scripts/ingest_camera.py --all
+
+# Keep recording active cameras until Ctrl+C.
+# Picks up cameras you add or restore, and stops a camera when you archive it.
+python scripts/ingest_camera.py --supervise
 ```
+
+Start the automatic recording supervisor with:
+
+```bash
+cd backend
+.venv/bin/python scripts/ingest_camera.py --supervise
+```
+
+`--supervise` is a separate process from the API. The API does not start it, and recording does not begin until this process is running. Run one supervisor. About every 5 seconds it reads active cameras. A camera you just added, and a camera you restored under its original id, are picked up the same way. When the RTSP source accepts a connection, that camera’s FFmpeg starts. When the source is unavailable, the supervisor waits and tries again (2 seconds, doubling up to 30 seconds). That retry does not set `ingest_offline_at`. Archive removes the camera from the active list; the supervisor stops its ingest and does not publish the open segment. Archived recordings stay on that camera id for playback and download.
+
+The dashboard **Online/Offline** badge is stream reachability (or an older `ingest_failed` flag). It does not mean a segment is being recorded right now. A camera can be online while the supervisor is still connecting, and offline while the supervisor is still retrying.
+
+The supervisor takes a PostgreSQL advisory lock per camera, so a second supervisor or a manual `--camera-id` / `--all` run will not start a second FFmpeg for a camera that is already being recorded.
 
 Ctrl+C stops ingest. RTSP uses TCP transport. Requires FFmpeg on `PATH`. Optional `--temp-dir` and `--duration` (default 60 seconds). `--loop` plays a file or HTTP MP4 in real time and repeats it, so ingest keeps writing a new minute until you stop it.
 

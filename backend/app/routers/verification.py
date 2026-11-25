@@ -21,6 +21,7 @@ from app.models.verification_attempt import (
     VerificationAttempt,
     VerificationAttemptMinute,
 )
+from app.models.video_record import VideoRecord
 from app.schemas.verification import (
     VerificationAttemptCreate,
     VerificationAttemptListResponse,
@@ -32,6 +33,7 @@ router = APIRouter()
 
 DEFAULT_PAGE_SIZE = 10
 MAX_PAGE_SIZE = 50
+RECORDING_NOT_FOUND = "Recording not found."
 
 
 def _as_utc(moment: datetime) -> datetime:
@@ -74,6 +76,34 @@ def _window_or_400(
     return window_start, window_end
 
 
+def _require_recordings_on_camera(
+    db: Session,
+    camera_id: UUID,
+    record_ids: set[UUID],
+) -> None:
+    """Reject ids that are missing or belong to a different camera.
+
+    Missing ids and ids owned through another camera return the same response.
+    """
+    if not record_ids:
+        return
+    found = set(
+        db.execute(
+            select(VideoRecord.id).where(
+                VideoRecord.camera_id == camera_id,
+                VideoRecord.id.in_(record_ids),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if found != record_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=RECORDING_NOT_FOUND,
+        )
+
+
 @router.post(
     "/{camera_id}/verification-attempts",
     response_model=VerificationAttemptPublic,
@@ -87,6 +117,15 @@ def create_verification_attempt(
 ) -> VerificationAttempt:
     _get_owned_active_camera(camera_id, current_user, db)
     window_start, window_end = _window_or_400(payload.started_at, payload.ended_at)
+    _require_recordings_on_camera(
+        db,
+        camera_id,
+        {
+            minute.video_record_id
+            for minute in payload.minutes
+            if minute.video_record_id is not None
+        },
+    )
 
     attempt = VerificationAttempt(
         user_id=current_user.id,

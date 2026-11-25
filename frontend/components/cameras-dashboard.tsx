@@ -7,7 +7,7 @@ import { networkErrorMessage } from "@/lib/api";
 import {
   CamerasApiError,
   DEFAULT_CAMERA_SORT,
-  deleteCamera,
+  archiveCamera,
   listCameras,
   type CameraPublic,
   type CameraSort,
@@ -66,11 +66,11 @@ export function CamerasDashboard() {
     void loadCameras(page);
   }, [loadCameras, page]);
 
-  const handleDelete = useCallback(
+  const handleArchive = useCallback(
     async (id: string) => {
       try {
-        await deleteCamera(id);
-        showToast("Camera removed from your dashboard.", "success");
+        await archiveCamera(id);
+        showToast("Camera archived. New recording has stopped.", "success");
         if (cameras.length === 1 && page > 1) {
           setPage((current) => current - 1);
         } else {
@@ -124,12 +124,19 @@ export function CamerasDashboard() {
                 : `${total} camera${total === 1 ? "" : "s"}`}
           </p>
         </div>
-        <Link href="/cameras/new" className={ui.btnPrimary}>
-          Add camera
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <Link href="/cameras/archived" className={ui.btnSecondary}>
+            Archive
+          </Link>
+          <Link href="/cameras/new" className={ui.btnPrimary}>
+            Add camera
+          </Link>
+        </div>
       </div>
 
-      <div className={`flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end ${ui.panel}`}>
+      <div
+        className={`flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end ${ui.panel}`}
+      >
         <form
           onSubmit={applySearch}
           className="flex min-w-[12rem] flex-1 flex-col gap-1.5"
@@ -191,7 +198,7 @@ export function CamerasDashboard() {
       ) : cameras.length === 0 ? (
         <p className={ui.panelMuted}>{emptyMessage}</p>
       ) : (
-        <CamerasGrid cameras={cameras} onDelete={handleDelete} />
+        <CamerasGrid cameras={cameras} onArchive={handleArchive} />
       )}
 
       <PaginationControls
@@ -260,18 +267,18 @@ function PaginationControls({
 
 function CamerasGrid({
   cameras,
-  onDelete,
+  onArchive,
 }: {
   cameras: CameraPublic[];
-  onDelete: (id: string) => Promise<void>;
+  onArchive: (id: string) => Promise<void>;
 }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
+    <div className="grid items-stretch gap-4 sm:grid-cols-2">
       {cameras.map((camera) => (
         <CameraCard
           key={camera.id}
           camera={camera}
-          onDelete={() => onDelete(camera.id)}
+          onArchive={() => onArchive(camera.id)}
         />
       ))}
     </div>

@@ -10,6 +10,17 @@ from pydantic import BaseModel, ConfigDict, Field
 
 VerifyScope = Literal["full", "partial", "minute"]
 VerifyStatus = Literal["verified", "tampered", "missing", "failed_to_verify"]
+# Server playback and download also record these outcomes. Client POST stays
+# on VerifyStatus so a browser cannot submit the automatic result vocabulary.
+StoredVerifyStatus = Literal[
+    "verified",
+    "tampered",
+    "missing",
+    "failed_to_verify",
+    "unavailable",
+    "failed",
+]
+AuditOperation = Literal["playback", "download"]
 
 MAX_ATTEMPT_MINUTES = 24 * 60
 
@@ -40,7 +51,7 @@ class VerificationMinutePublic(BaseModel):
 
     id: UUID
     started_at: datetime
-    status: VerifyStatus
+    status: StoredVerifyStatus
     detail: str
     video_record_id: UUID | None
 
@@ -54,7 +65,8 @@ class VerificationAttemptSummary(BaseModel):
     started_at: datetime
     ended_at: datetime
     scope: VerifyScope
-    overall_status: VerifyStatus
+    operation: AuditOperation | None = None
+    overall_status: StoredVerifyStatus
     created_at: datetime
 
 

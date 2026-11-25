@@ -1,6 +1,11 @@
 import { getApiBaseUrl, parseApiErrorMessage } from "./api";
 import { authFetch } from "./auth-fetch";
 import { CamerasApiError } from "./cameras-api";
+import {
+  beginPlaybackTiming,
+  logPlaybackTiming,
+  notePlaybackRecord,
+} from "./playback-timing";
 
 export type VideoRecordPublic = {
   id: string;
@@ -129,12 +134,25 @@ export class PlaybackVerificationError extends Error {
 export async function fetchRecordingPlayback(
   cameraId: string,
   recordId: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  timingId?: string
 ): Promise<Blob> {
+  const id = timingId && timingId.length > 0 ? timingId : beginPlaybackTiming();
+  notePlaybackRecord(recordId, id);
+  const requestStarted = performance.now();
+  logPlaybackTiming(id, "playback-request-started", requestStarted, {
+    recordId,
+  });
   const response = await authFetch(
     `${getApiBaseUrl()}/cameras/${cameraId}/recordings/${recordId}/playback`,
-    { signal }
+    {
+      signal,
+      headers: { "X-Playback-Timing-Id": id },
+    }
   );
+  logPlaybackTiming(id, "response-headers-received", requestStarted, {
+    status: response.status,
+  });
 
   if (!response.ok) {
     const body = await readJson(response);
@@ -150,9 +168,15 @@ export async function fetchRecordingPlayback(
 
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("video/")) {
-    throw new CamerasApiError("Could not play this recording.", response.status);
+    throw new CamerasApiError(
+      "Could not play this recording.",
+      response.status
+    );
   }
-  return response.blob();
+  const blobStarted = performance.now();
+  const blob = await response.blob();
+  logPlaybackTiming(id, "blob-completed", blobStarted, { bytes: blob.size });
+  return blob;
 }
 
 async function readJson(response: Response): Promise<unknown> {
@@ -243,13 +267,19 @@ export async function downloadRecordings(
 
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("multipart/form-data")) {
-    throw new CamerasApiError("Could not download recordings.", response.status);
+    throw new CamerasApiError(
+      "Could not download recordings.",
+      response.status
+    );
   }
   const form = await response.formData();
   const report = downloadReportFrom(await readFormJson(form.get("report")));
   const video = form.get("video");
   if (!report || !(video instanceof Blob) || video.size <= 0) {
-    throw new CamerasApiError("Could not download recordings.", response.status);
+    throw new CamerasApiError(
+      "Could not download recordings.",
+      response.status
+    );
   }
   const filename =
     video instanceof File && video.name ? video.name : "recording.mp4";
@@ -261,10 +291,17 @@ export function saveRecordingDownload(video: Blob, filename: string): void {
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
+  link.rel = "noopener";
+  link.style.display = "none";
+  link.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
   document.body.appendChild(link);
   link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, 0);
 }
 
 async function readFormJson(part: FormDataEntryValue | null): Promise<unknown> {
@@ -302,4 +339,3 @@ function downloadReportFrom(body: unknown): DownloadVerification | null {
   }
   return record as DownloadVerification;
 }
-

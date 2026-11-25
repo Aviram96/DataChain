@@ -61,7 +61,7 @@ export function CameraForm({
       </div>
       <div className="space-y-1.5">
         <label htmlFor="camera-stream-url" className={ui.label}>
-          IP / stream URL
+          Stream URL
         </label>
         <input
           id="camera-stream-url"

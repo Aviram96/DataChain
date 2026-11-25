@@ -72,7 +72,10 @@ export function contiguousRecording(
   }
   if (index < 0) {
     for (let cursor = playable.length - 1; cursor >= 0; cursor -= 1) {
-      if (playable[cursor].ended === instant || playable[cursor].started < instant) {
+      if (
+        playable[cursor].ended === instant ||
+        playable[cursor].started < instant
+      ) {
         index = cursor;
         break;
       }
@@ -114,7 +117,11 @@ export function buildPlaybackSequence(
   const rangeEnd = Date.parse(endedAt);
   const slices: PlaySlice[] = [];
   const gaps: PlaybackGap[] = [];
-  if (!Number.isFinite(rangeStart) || !Number.isFinite(rangeEnd) || rangeEnd <= rangeStart) {
+  if (
+    !Number.isFinite(rangeStart) ||
+    !Number.isFinite(rangeEnd) ||
+    rangeEnd <= rangeStart
+  ) {
     return { startedAt, endedAt, slices, gaps, startSeconds: 0 };
   }
 
@@ -169,12 +176,18 @@ export function buildPlaybackSequence(
       0
     );
     const offset = offsetIntoSequence(sequence, startAt);
-    sequence.startSeconds = Math.min(Math.max(0, offset), Math.max(0, total - 0.05));
+    sequence.startSeconds = Math.min(
+      Math.max(0, offset),
+      Math.max(0, total - 0.05)
+    );
   }
   return sequence;
 }
 
-function offsetIntoSequence(sequence: PlaybackSequence, instantIso: string): number {
+function offsetIntoSequence(
+  sequence: PlaybackSequence,
+  instantIso: string
+): number {
   const instant = Date.parse(instantIso);
   if (!Number.isFinite(instant)) {
     return 0;
@@ -193,4 +206,43 @@ function offsetIntoSequence(sequence: PlaybackSequence, instantIso: string): num
     elapsed += span;
   }
   return elapsed;
+}
+
+/**
+ * An explicit end plays that window only. A start on its own still opens the
+ * joined recording that contains it, beginning at the chosen instant.
+ */
+export function sequenceForRequest(
+  records: VideoRecordPublic[],
+  startedAt: string,
+  endedAt?: string
+): PlaybackSequence | null {
+  if (endedAt) {
+    const sequence = buildPlaybackSequence(records, startedAt, endedAt);
+    return sequence.slices.length > 0 ? sequence : null;
+  }
+  const span = contiguousRecording(records, startedAt);
+  if (!span) {
+    return null;
+  }
+  const sequence = buildPlaybackSequence(
+    records,
+    span.startedAt,
+    span.endedAt,
+    startedAt
+  );
+  return sequence.slices.length > 0 ? sequence : null;
+}
+
+export function watchRangeReady(startedAt: string, endedAt: string): boolean {
+  const start = Date.parse(startedAt);
+  const end = Date.parse(endedAt);
+  return Number.isFinite(start) && Number.isFinite(end) && end > start;
+}
+
+export function playableSeconds(sequence: PlaybackSequence): number {
+  return sequence.slices.reduce(
+    (sum, slice) => sum + Math.max(0, slice.endSeconds - slice.offsetSeconds),
+    0
+  );
 }

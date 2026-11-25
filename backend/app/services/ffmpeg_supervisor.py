@@ -36,6 +36,7 @@ class FFmpegRunConfig:
     graceful_stop: bool = False
     on_process_start: ProcessStartHook | None = None
     on_process_exit: ProcessExitHook | None = None
+    install_signal_handlers: bool = True
 
 
 def resolve_restart_delay_seconds() -> float:
@@ -112,7 +113,6 @@ class FFmpegSupervisor:
             code = proc.wait(timeout=5)
         self._notify_process_exit(code)
 
-
     def run_until_signal(self) -> int:
         """Run until stopped by signal or non-restartable FFmpeg exit."""
         previous_handlers: dict[int, Any] = {}
@@ -135,11 +135,12 @@ class FFmpegSupervisor:
 
             proc.terminate()
 
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            try:
-                previous_handlers[sig] = signal.signal(sig, _handle_signal)
-            except (ValueError, OSError):
-                pass
+        if self._config.install_signal_handlers:
+            for sig in (signal.SIGINT, signal.SIGTERM):
+                try:
+                    previous_handlers[sig] = signal.signal(sig, _handle_signal)
+                except (ValueError, OSError):
+                    pass
 
         last_code = 0
         try:

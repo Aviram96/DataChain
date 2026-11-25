@@ -95,7 +95,11 @@ export function RegisterForm() {
           {PASSWORD_REQUIREMENTS_HINT}
         </p>
       </div>
-      <button type="submit" disabled={submitting} className={`w-full ${ui.btnPrimary}`}>
+      <button
+        type="submit"
+        disabled={submitting}
+        className={`w-full ${ui.btnPrimary}`}
+      >
         {submitting ? "Creating account…" : "Sign up"}
       </button>
       <p className={`text-center ${ui.muted}`}>

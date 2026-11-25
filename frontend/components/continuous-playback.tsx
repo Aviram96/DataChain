@@ -1,7 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
+import {
+  openPlayback,
+  reducePlayback,
+  type MediaSlice,
+  type PlaybackEffect,
+  type PlaybackEvent,
+  type PlaybackMachine,
+  type PlaybackPhase,
+} from "@/lib/playback-controller";
 import type { PlaybackSequence, PlaySlice } from "@/lib/playback-sequence";
 import {
   fetchRecordingPlayback,
@@ -9,8 +24,16 @@ import {
   type PlaybackDenial,
   type VideoRecordPublic,
 } from "@/lib/recordings-api";
+import {
+  logPlaybackTiming,
+  playbackTimingForRecord,
+} from "@/lib/playback-timing";
 import { ui } from "@/lib/ui";
-import { formatLocalWindow } from "@/lib/verify-recordings";
+import {
+  formatLocalWindow,
+  formatLocalWindowParts,
+  missingRecordingMessage,
+} from "@/lib/verify-recordings";
 
 type ContinuousPlaybackProps = {
   sectionRef: RefObject<HTMLElement | null>;
@@ -18,6 +41,7 @@ type ContinuousPlaybackProps = {
   sequence: PlaybackSequence;
   signal?: AbortSignal;
   generation: number;
+  startupTimingId?: string;
   downloading: boolean;
   busy: boolean;
   onClose: () => void;
@@ -32,24 +56,7 @@ type ContinuousPlaybackProps = {
   ) => void;
 };
 
-type Slot = 0 | 1;
-
-type Armed = {
-  sliceIndex: number;
-  mediaTime: number;
-  play: boolean;
-  token: number;
-};
-
-type Handoff = {
-  from: Slot;
-  to: Slot;
-  index: number;
-};
-
-const READY_STATE = 3;
-
-type BlockedSlice = {
+type Failure = {
   detail: string;
   denial: PlaybackDenial | null;
 };
@@ -61,12 +68,15 @@ type Interruption = {
   detail: string;
 };
 
+const SEEK_TOLERANCE_SECONDS = 0.45;
+
 export function ContinuousPlayback({
   sectionRef,
   cameraId,
   sequence,
   signal,
   generation,
+  startupTimingId,
   downloading,
   busy,
   onClose,
@@ -76,39 +86,279 @@ export function ContinuousPlayback({
   onActiveRecord,
   onSegmentBlocked,
 }: ContinuousPlaybackProps) {
-  const videoA = useRef<HTMLVideoElement>(null);
-  const videoB = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const sequenceRef = useRef(sequence);
-  const indexRef = useRef(0);
-  const slotRef = useRef<Slot>(0);
-  const advancingRef = useRef(false);
-  const playingRef = useRef(false);
-  const slotToken = useRef<[number, number]>([0, 0]);
-  const armed = useRef<[Armed | null, Armed | null]>([null, null]);
-  const pendingHandoff = useRef<Handoff | null>(null);
+  const machine = useRef<PlaybackMachine>(
+    openPlayback(toMedia(sequence), sequence.startSeconds).state
+  );
   const sessionAbort = useRef<AbortController | null>(null);
-  const urls = useRef(new Map<string, string>());
-  const loads = useRef(new Map<string, Promise<string>>());
-  const blocked = useRef(new Map<string, BlockedSlice>());
+  const byRecord = useRef(new Map<string, string>());
+  const byCid = useRef(new Map<string, string>());
+  const inflight = useRef(new Map<string, Promise<string | null>>());
+  const denied = useRef(new Map<string, Failure>());
+  const reported = useRef(new Set<string>());
+  const pendingSeek = useRef<{ command: number; mediaTime: number } | null>(
+    null
+  );
+  const mounted = useRef(true);
   const generationRef = useRef(generation);
+  const startupTimingIdRef = useRef(startupTimingId);
+  const startupTimingPending = useRef(true);
   const onSegmentBlockedRef = useRef(onSegmentBlocked);
   const onPlaybackErrorRef = useRef(onPlaybackError);
   const cameraIdRef = useRef(cameraId);
-  const [slot, setSlot] = useState<Slot>(0);
+  const runEffectRef = useRef<(effect: PlaybackEffect) => void>(() => {});
+  const [phase, setPhase] = useState<PlaybackPhase>(machine.current.phase);
+  const [index, setIndex] = useState(machine.current.index);
+  const [elapsed, setElapsed] = useState(machine.current.elapsed);
+  const [scrub, setScrub] = useState<number | null>(null);
   const [interruptions, setInterruptions] = useState<Interruption[]>([]);
+
+  sequenceRef.current = sequence;
   generationRef.current = generation;
+  startupTimingIdRef.current = startupTimingId;
   onSegmentBlockedRef.current = onSegmentBlocked;
   onPlaybackErrorRef.current = onPlaybackError;
   cameraIdRef.current = cameraId;
-  const [index, setIndex] = useState(0);
-  const [playing, setPlaying] = useState(false);
-  const [elapsed, setElapsed] = useState(sequence.startSeconds);
-  const [scrub, setScrub] = useState<number | null>(null);
+
   const slice = sequence.slices[index];
   const windowLabel = formatLocalWindow(sequence.startedAt, sequence.endedAt);
-  const totalSeconds = sequence.slices.reduce((sum, item) => sum + sliceSpan(item), 0);
-  sequenceRef.current = sequence;
-  playingRef.current = playing;
+  const windowParts = formatLocalWindowParts(
+    sequence.startedAt,
+    sequence.endedAt
+  );
+  const totalSeconds = sequence.slices.reduce(
+    (sum, item) => sum + Math.max(0, item.endSeconds - item.offsetSeconds),
+    0
+  );
+
+  function publish(state: PlaybackMachine) {
+    if (!mounted.current) {
+      return;
+    }
+    setPhase(state.phase);
+    setIndex(state.index);
+    setElapsed(state.elapsed);
+    if (
+      (state.phase === "playing" || state.phase === "paused") &&
+      state.positioned
+    ) {
+      const next = sequenceRef.current.slices[state.index + 1];
+      if (next) {
+        void verifySlice(next);
+      }
+    }
+  }
+
+  function dispatch(event: PlaybackEvent) {
+    const result = reducePlayback(
+      machine.current,
+      event,
+      toMedia(sequenceRef.current)
+    );
+    machine.current = result.state;
+    publish(result.state);
+    runEffectRef.current(result.effect);
+  }
+
+  function rememberBlock(sliceToReport: PlaySlice, failure: Failure) {
+    if (reported.current.has(sliceToReport.record.id)) {
+      return;
+    }
+    reported.current.add(sliceToReport.record.id);
+    setInterruptions((current) => [
+      ...current,
+      {
+        id: sliceToReport.record.id,
+        startedAt: sliceToReport.record.started_at,
+        endedAt: sliceToReport.record.ended_at,
+        detail: failure.detail,
+      },
+    ]);
+    if (failure.denial) {
+      onSegmentBlockedRef.current(
+        sliceToReport.record,
+        failure.denial,
+        generationRef.current
+      );
+    }
+  }
+
+  function verifySlice(
+    target: PlaySlice,
+    timingId?: string
+  ): Promise<string | null> {
+    const id = target.record.id;
+    const ready = byRecord.current.get(id);
+    if (ready) {
+      return Promise.resolve(ready);
+    }
+    const pending = inflight.current.get(id);
+    if (pending) {
+      return pending;
+    }
+    if (denied.current.has(id)) {
+      return Promise.resolve(null);
+    }
+    const requestSignal = sessionAbort.current?.signal;
+    const task = fetchRecordingPlayback(
+      cameraIdRef.current,
+      id,
+      requestSignal,
+      timingId
+    )
+      .then((blob) => {
+        if (requestSignal?.aborted) {
+          throw new DOMException("The operation was aborted.", "AbortError");
+        }
+        if (!blob) {
+          return null;
+        }
+        const cid = target.record.ipfs_cid.trim();
+        let url = byCid.current.get(cid);
+        if (!url) {
+          url = URL.createObjectURL(blob);
+          byCid.current.set(cid, url);
+        }
+        byRecord.current.set(id, url);
+        return url;
+      })
+      .catch((error: unknown) => {
+        if (isAbortError(error)) {
+          throw error;
+        }
+        const denial =
+          error instanceof PlaybackVerificationError ? error.denial : null;
+        const detail =
+          denial?.detail ||
+          (error instanceof Error && error.message
+            ? error.message
+            : "Could not play this part.");
+        const failure = { detail, denial };
+        denied.current.set(id, failure);
+        rememberBlock(target, failure);
+        return null;
+      })
+      .finally(() => {
+        if (inflight.current.get(id) === task) {
+          inflight.current.delete(id);
+        }
+      });
+    inflight.current.set(id, task);
+    return task;
+  }
+
+  function seekOrReady(
+    video: HTMLVideoElement,
+    command: number,
+    mediaTime: number
+  ) {
+    if (machine.current.command !== command) {
+      return;
+    }
+    const closeEnough =
+      video.readyState >= 1 &&
+      !video.seeking &&
+      Math.abs(video.currentTime - mediaTime) <= SEEK_TOLERANCE_SECONDS;
+    if (closeEnough) {
+      pendingSeek.current = null;
+      dispatch({ type: "positioned", command, currentTime: video.currentTime });
+      return;
+    }
+    pendingSeek.current = { command, mediaTime };
+    video.currentTime = mediaTime;
+    if (
+      !video.seeking &&
+      Math.abs(video.currentTime - mediaTime) <= SEEK_TOLERANCE_SECONDS
+    ) {
+      pendingSeek.current = null;
+      dispatch({ type: "positioned", command, currentTime: video.currentTime });
+    }
+  }
+
+  async function show(effect: Extract<PlaybackEffect, { type: "show" }>) {
+    const target = sequenceRef.current.slices[effect.index];
+    if (!target) {
+      return;
+    }
+    let url: string | null = null;
+    const startupId = startupTimingPending.current
+      ? startupTimingIdRef.current
+      : undefined;
+    startupTimingPending.current = false;
+    try {
+      url = await verifySlice(target, startupId);
+    } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
+      url = null;
+    }
+    if (machine.current.command !== effect.command) {
+      return;
+    }
+    if (!url || !url.startsWith("blob:")) {
+      const failure = denied.current.get(target.record.id);
+      if (failure && !failure.denial) {
+        onPlaybackErrorRef.current();
+      }
+      dispatch({
+        type: "load-failed",
+        command: effect.command,
+        index: effect.index,
+      });
+      return;
+    }
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+    video.pause();
+    const timingId = playbackTimingForRecord(target.record.id) ?? startupId;
+    if (!sameSource(video, url)) {
+      pendingSeek.current = {
+        command: effect.command,
+        mediaTime: effect.mediaTime,
+      };
+      if (timingId) {
+        logPlaybackTiming(timingId, "src-assigned", performance.now(), {
+          recordId: target.record.id,
+        });
+      }
+      video.src = url;
+      return;
+    }
+    seekOrReady(video, effect.command, effect.mediaTime);
+  }
+
+  runEffectRef.current = (effect) => {
+    const video = videoRef.current;
+    if (effect.type === "show") {
+      void show(effect);
+      return;
+    }
+    if (!video) {
+      return;
+    }
+    if (effect.type === "play") {
+      void video.play().catch(() => {
+        if (machine.current.command === effect.command) {
+          dispatch({ type: "play-rejected", command: effect.command });
+        }
+      });
+      return;
+    }
+    if (effect.type === "pause") {
+      video.pause();
+    }
+  };
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const local = new AbortController();
@@ -119,73 +369,52 @@ export function ContinuousPlayback({
     } else {
       signal?.addEventListener("abort", onParentAbort);
     }
-    blocked.current.clear();
+    denied.current.clear();
+    reported.current.clear();
+    startupTimingPending.current = true;
     setInterruptions([]);
-    const start = positionAt(sequence, sequence.startSeconds);
-    indexRef.current = start.index;
-    slotRef.current = 0;
-    pendingHandoff.current = null;
-    advancingRef.current = true;
-    setSlot(0);
-    setIndex(start.index);
-    setElapsed(start.elapsed);
-    setPlaying(false);
-    for (const which of [0, 1] as const) {
-      slotToken.current[which] += 1;
-      armed.current[which] = null;
-      const video = videoOf(which);
-      if (!video) {
-        continue;
-      }
-      video.pause();
-      video.removeAttribute("src");
-    }
-    if (sequence.slices[start.index]) {
-      arm(0, start.index, start.mediaTime, true);
-      const ahead = differentSliceAfter(sequence, start.index);
-      if (ahead >= 0) {
-        arm(1, ahead, sequence.slices[ahead].offsetSeconds, false);
-      }
-    } else {
-      advancingRef.current = false;
-    }
+    pendingSeek.current = null;
+    const opened = openPlayback(toMedia(sequence), sequence.startSeconds);
+    machine.current = opened.state;
+    publish(opened.state);
+    runEffectRef.current(opened.effect);
+    const video = videoRef.current;
+    const urlsByCid = byCid.current;
+    const urlsByRecord = byRecord.current;
+    const pendingLoads = inflight.current;
+    const deniedSlices = denied.current;
     return () => {
       local.abort();
       signal?.removeEventListener("abort", onParentAbort);
       if (sessionAbort.current === local) {
         sessionAbort.current = null;
       }
-      for (const which of [0, 1] as const) {
-        const video = videoOf(which);
-        if (!video) {
-          continue;
-        }
+      const cancelled = reducePlayback(
+        machine.current,
+        { type: "cancel" },
+        toMedia(sequenceRef.current)
+      );
+      machine.current = cancelled.state;
+      pendingSeek.current = null;
+      if (video) {
         video.pause();
         video.removeAttribute("src");
       }
-      for (const url of urls.current.values()) {
+      for (const url of urlsByCid.values()) {
         URL.revokeObjectURL(url);
       }
-      urls.current.clear();
-      loads.current.clear();
-      blocked.current.clear();
+      urlsByCid.clear();
+      urlsByRecord.clear();
+      pendingLoads.clear();
+      deniedSlices.clear();
     };
-    // arm() reads refs. Restart only when the open sequence or its session ends.
+    // Restart only when the open sequence or its session ends.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sequence, signal]);
 
   useEffect(() => {
-    if (index !== indexRef.current) {
-      return;
-    }
-    warmAhead(indexRef.current);
-    // Buffer the following minute after the visible minute is on screen.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, slot]);
-
-  useEffect(() => {
-    onPlayingChange(playing);
-  }, [onPlayingChange, playing]);
+    onPlayingChange(phase === "playing");
+  }, [onPlayingChange, phase]);
 
   useEffect(() => {
     onActiveRecord(slice?.record.id ?? null);
@@ -211,387 +440,83 @@ export function ContinuousPlayback({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  function videoOf(which: Slot): HTMLVideoElement | null {
-    return which === 0 ? videoA.current : videoB.current;
+  function onLoadedMetadata() {
+    const activeId =
+      sequenceRef.current.slices[machine.current.index]?.record.id;
+    const timingId = activeId ? playbackTimingForRecord(activeId) : undefined;
+    if (timingId) {
+      logPlaybackTiming(timingId, "loadedmetadata");
+    }
+    const video = videoRef.current;
+    const pending = pendingSeek.current;
+    if (!video || !pending) {
+      return;
+    }
+    seekOrReady(video, pending.command, pending.mediaTime);
   }
 
-  function stillArmed(which: Slot, token: number): boolean {
-    return (
-      armed.current[which]?.token === token &&
-      token === slotToken.current[which] &&
-      sessionAbort.current?.signal.aborted !== true
-    );
-  }
-
-  function clearSource(video: HTMLVideoElement) {
-    if (!video.getAttribute("src")) {
+  function onSeeked() {
+    const video = videoRef.current;
+    const pending = pendingSeek.current;
+    if (!video || !pending || pending.command !== machine.current.command) {
       return;
     }
-    video.pause();
-    video.removeAttribute("src");
-    video.load();
-  }
-
-  function stopIfCurrent(which: Slot) {
-    if (which !== slotRef.current && pendingHandoff.current?.to !== which) {
-      return;
-    }
-    advancingRef.current = false;
-    pendingHandoff.current = null;
-    videoOf(slotRef.current)?.pause();
-    setPlaying(false);
-  }
-
-  function rememberBlock(
-    slice: PlaySlice,
-    detail: string,
-    denial: PlaybackDenial | null
-  ) {
-    if (blocked.current.has(slice.record.id)) {
-      return;
-    }
-    blocked.current.set(slice.record.id, { detail, denial });
-    setInterruptions((current) => [
-      ...current,
-      {
-        id: slice.record.id,
-        startedAt: slice.record.started_at,
-        endedAt: slice.record.ended_at,
-        detail,
-      },
-    ]);
-    if (denial) {
-      onSegmentBlockedRef.current(slice.record, denial, generationRef.current);
-    }
-  }
-
-  function loadVerified(slice: PlaySlice): Promise<string> {
-    const cached = urls.current.get(slice.record.id);
-    if (cached) {
-      return Promise.resolve(cached);
-    }
-    const pending = loads.current.get(slice.record.id);
-    if (pending) {
-      return pending;
-    }
-    const requestSignal = sessionAbort.current?.signal;
-    let task: Promise<string>;
-    task = fetchRecordingPlayback(
-      cameraIdRef.current,
-      slice.record.id,
-      requestSignal
-    )
-      .then((blob) => {
-        if (requestSignal?.aborted) {
-          throw new DOMException("The operation was aborted.", "AbortError");
-        }
-        const url = URL.createObjectURL(blob);
-        urls.current.set(slice.record.id, url);
-        if (loads.current.get(slice.record.id) === task) {
-          loads.current.delete(slice.record.id);
-        }
-        return url;
-      })
-      .catch((error: unknown) => {
-        if (loads.current.get(slice.record.id) === task) {
-          loads.current.delete(slice.record.id);
-        }
-        throw error;
-      });
-    loads.current.set(slice.record.id, task);
-    return task;
-  }
-
-  function other(which: Slot): Slot {
-    return which === 0 ? 1 : 0;
-  }
-
-  function elapsedBefore(sliceIndex: number): number {
-    return sequenceRef.current.slices
-      .slice(0, sliceIndex)
-      .reduce((sum, item) => sum + sliceSpan(item), 0);
-  }
-
-  function arm(which: Slot, sliceIndex: number, mediaTime: number, play: boolean) {
-    const nextSlice = sequenceRef.current.slices[sliceIndex];
-    const video = videoOf(which);
-    if (!nextSlice || !video) {
-      return;
-    }
-    const token = ++slotToken.current[which];
-    armed.current[which] = { sliceIndex, mediaTime, play, token };
-    video.muted = !play;
-    if (blocked.current.has(nextSlice.record.id)) {
-      clearSource(video);
-      stopIfCurrent(which);
-      return;
-    }
-    const cached = urls.current.get(nextSlice.record.id);
-    if (cached && sameSource(video, cached)) {
-      if (video.readyState >= 1) {
-        park(which);
-      }
-      return;
-    }
-    clearSource(video);
-    void loadVerified(nextSlice)
-      .then((url) => {
-        if (!stillArmed(which, token) || !url.startsWith("blob:")) {
-          return;
-        }
-        if (!sameSource(video, url)) {
-          video.src = url;
-          return;
-        }
-        if (video.readyState >= 1) {
-          park(which);
-        }
-      })
-      .catch((error: unknown) => {
-        if (!stillArmed(which, token) || isAbortError(error)) {
-          return;
-        }
-        clearSource(video);
-        if (error instanceof PlaybackVerificationError) {
-          rememberBlock(nextSlice, error.denial.detail, error.denial);
-        } else {
-          const message =
-            error instanceof Error && error.message
-              ? error.message
-              : "Could not play this part.";
-          rememberBlock(nextSlice, message, null);
-          onPlaybackErrorRef.current();
-        }
-        stopIfCurrent(which);
-      });
-  }
-
-  function park(which: Slot) {
-    const video = videoOf(which);
-    const pending = armed.current[which];
-    if (!video || !pending || pending.token !== slotToken.current[which]) {
-      return;
-    }
-    const max = Number.isFinite(video.duration)
-      ? Math.max(0, video.duration - 0.05)
-      : pending.mediaTime;
-    const target = Math.min(Math.max(0, pending.mediaTime), max);
-    if (Math.abs(video.currentTime - target) > 0.2) {
-      video.currentTime = target;
-      return;
-    }
-    if (!pending.play) {
-      return;
-    }
-    if (pendingHandoff.current?.to === which) {
-      showPrepared(which, pending.sliceIndex);
-      return;
-    }
-    if (which !== slotRef.current) {
-      return;
-    }
-    pending.play = false;
-    video.muted = false;
-    void video.play().catch(() => {
-      if (slotRef.current === which) {
-        advancingRef.current = false;
-        setPlaying(false);
-      }
-    });
-  }
-
-  function showPrepared(which: Slot, sliceIndex: number) {
-    const nextVideo = videoOf(which);
-    if (!nextVideo) {
-      advancingRef.current = false;
-      pendingHandoff.current = null;
-      return;
-    }
-    const pending = armed.current[which];
-    if (pending) {
-      pending.play = false;
-    }
-    const previous = videoOf(other(which));
-    nextVideo.muted = false;
-    pendingHandoff.current = null;
-    indexRef.current = sliceIndex;
-    slotRef.current = which;
-    setIndex(sliceIndex);
-    setSlot(which);
-    advancingRef.current = true;
-    if (previous && previous !== nextVideo && !previous.paused) {
-      previous.pause();
-    }
-    void nextVideo.play().catch(() => {
-      advancingRef.current = false;
-      setPlaying(false);
-    });
-  }
-
-  function readyFor(which: Slot, sliceIndex: number, mediaTime: number): boolean {
-    const video = videoOf(which);
-    const pending = armed.current[which];
-    const nextSlice = sequenceRef.current.slices[sliceIndex];
-    if (!video || !pending || !nextSlice) {
-      return false;
-    }
-    if (pending.token !== slotToken.current[which] || pending.sliceIndex !== sliceIndex) {
-      return false;
-    }
-    if (video.readyState < READY_STATE) {
-      return false;
-    }
-    const verifiedUrl = urls.current.get(nextSlice.record.id);
-    if (!verifiedUrl || !sameSource(video, verifiedUrl)) {
-      return false;
-    }
-    return Math.abs(video.currentTime - mediaTime) <= 0.45;
-  }
-
-  function warmAhead(fromIndex: number) {
-    const ahead = differentSliceAfter(sequenceRef.current, fromIndex);
-    if (ahead < 0) {
-      return;
-    }
-    const standby = other(slotRef.current);
-    const pending = armed.current[standby];
-    if (pending && pending.sliceIndex === ahead && pending.token === slotToken.current[standby]) {
-      return;
-    }
-    arm(standby, ahead, sequenceRef.current.slices[ahead].offsetSeconds, false);
-  }
-
-  function finishSlice() {
-    if (advancingRef.current) {
-      return;
-    }
-    const seq = sequenceRef.current;
-    const current = indexRef.current;
-    const currentSlice = seq.slices[current];
-    const active = slotRef.current;
-    const activeVideo = videoOf(active);
-    if (!currentSlice || !activeVideo) {
-      return;
-    }
-    const next = current + 1;
-    if (next >= seq.slices.length) {
-      activeVideo.pause();
-      setPlaying(false);
-      setElapsed(seq.slices.reduce((sum, item) => sum + sliceSpan(item), 0));
-      return;
-    }
-    const nextSlice = seq.slices[next];
-    if (blocked.current.has(nextSlice.record.id)) {
-      activeVideo.pause();
-      pendingHandoff.current = null;
-      advancingRef.current = false;
-      setPlaying(false);
-      return;
-    }
-    if (nextSlice.record.ipfs_cid.trim() === currentSlice.record.ipfs_cid.trim()) {
-      indexRef.current = next;
-      setIndex(next);
-      warmAhead(next);
-      return;
-    }
-    const standby = other(active);
-    const mediaTime = nextSlice.offsetSeconds;
-    advancingRef.current = true;
-    pendingHandoff.current = { from: active, to: standby, index: next };
-    if (readyFor(standby, next, mediaTime)) {
-      showPrepared(standby, next);
-      return;
-    }
-    arm(standby, next, mediaTime, true);
-  }
-
-  function syncElapsed(which: Slot) {
-    if (which !== slotRef.current) {
-      return;
-    }
-    const video = videoOf(which);
-    const currentSlice = sequenceRef.current.slices[indexRef.current];
-    if (!video || !currentSlice || advancingRef.current || video.seeking) {
-      return;
-    }
-    const into = Math.max(0, video.currentTime - currentSlice.offsetSeconds);
-    const span = sliceSpan(currentSlice);
-    setElapsed(elapsedBefore(indexRef.current) + Math.min(into, span));
-    if (atSliceEnd(video, currentSlice)) {
-      finishSlice();
-    }
-  }
-
-  function seekTo(seconds: number) {
-    const seq = sequenceRef.current;
-    if (seq.slices.length === 0) {
-      return;
-    }
-    const pos = positionAt(seq, seconds);
-    setElapsed(pos.elapsed);
-    const active = slotRef.current;
-    const activeVideo = videoOf(active);
-    pendingHandoff.current = null;
     if (
-      pos.index === indexRef.current &&
-      activeVideo &&
-      activeVideo.readyState >= 1 &&
-      activeVideo.getAttribute("src")
+      Math.abs(video.currentTime - pending.mediaTime) > SEEK_TOLERANCE_SECONDS
     ) {
-      const max = Number.isFinite(activeVideo.duration)
-        ? Math.max(0, activeVideo.duration - 0.05)
-        : pos.mediaTime;
-      activeVideo.currentTime = Math.min(pos.mediaTime, max);
-      warmAhead(pos.index);
+      video.currentTime = pending.mediaTime;
       return;
     }
-    advancingRef.current = true;
-    indexRef.current = pos.index;
-    setIndex(pos.index);
-    arm(active, pos.index, pos.mediaTime, playingRef.current);
-    warmAhead(pos.index);
+    pendingSeek.current = null;
+    dispatch({
+      type: "positioned",
+      command: pending.command,
+      currentTime: video.currentTime,
+    });
   }
 
-  function handlePlaying(which: Slot) {
-    if (which !== slotRef.current) {
-      videoOf(which)?.pause();
+  function onTimeUpdate() {
+    const video = videoRef.current;
+    if (!video || video.seeking) {
       return;
     }
-    advancingRef.current = false;
-    setPlaying(true);
+    dispatch({
+      type: "time",
+      command: machine.current.command,
+      currentTime: video.currentTime,
+    });
   }
 
-  function handlePause(which: Slot) {
-    if (which !== slotRef.current || advancingRef.current) {
+  function onEnded() {
+    const video = videoRef.current;
+    if (!video) {
       return;
     }
-    setPlaying(false);
+    dispatch({
+      type: "ended",
+      command: machine.current.command,
+      currentTime: video.currentTime,
+    });
   }
 
-  function handleEnded(which: Slot) {
-    if (which !== slotRef.current) {
+  function onMediaError() {
+    if (!sessionAbort.current || sessionAbort.current.signal.aborted) {
       return;
     }
-    const video = videoOf(which);
-    const currentSlice = sequenceRef.current.slices[indexRef.current];
-    if (!video || !currentSlice || advancingRef.current) {
+    const video = videoRef.current;
+    if (!video?.getAttribute("src")) {
       return;
     }
-    if (video.currentTime <= currentSlice.offsetSeconds + 0.3) {
+    const state = machine.current;
+    if (state.phase === "loading" || state.phase === "transitioning") {
+      dispatch({
+        type: "load-failed",
+        command: state.command,
+        index: state.index,
+      });
       return;
     }
-    finishSlice();
-  }
-
-  function handleError(which: Slot) {
-    if (sessionAbort.current === null || sessionAbort.current.signal.aborted) {
-      return;
-    }
-    if (which !== slotRef.current && pendingHandoff.current?.to !== which) {
-      return;
-    }
-    advancingRef.current = false;
-    pendingHandoff.current = null;
+    dispatch({ type: "play-rejected", command: state.command });
     onPlaybackError();
   }
 
@@ -599,146 +524,163 @@ export function ContinuousPlayback({
     setScrub(null);
     const seconds = Number(value);
     if (Number.isFinite(seconds)) {
-      seekTo(seconds);
+      dispatch({ type: "seek", seconds });
     }
   }
 
-  function togglePlay() {
-    const video = videoOf(slotRef.current);
-    if (!video) {
-      return;
-    }
-    if (video.paused) {
-      void video.play().catch(() => setPlaying(false));
-      return;
-    }
-    video.pause();
-  }
+  const checking = phase === "loading" || phase === "transitioning";
+  const failed = phase === "blocked";
+  const playDisabled = checking || failed;
+
+  const playLabel = phase === "playing" ? "Pause" : "Play";
+  const downloadLabel = downloading ? "Downloading" : "Download";
+  const bannerText = failed
+    ? "Verification failed. This part was not played."
+    : checking
+      ? "Checking this part…"
+      : phase === "ended"
+        ? "Ended"
+        : null;
 
   return (
     <section
       ref={sectionRef}
       id="open-recording"
-      aria-labelledby="open-recording-title"
+      aria-label="Recording player"
       className={`${ui.panel} scroll-mt-6`}
     >
-      <h2 id="open-recording-title" className={ui.sectionTitle}>
-        This recording
-      </h2>
-      <div className="mt-3 space-y-4">
-        <div>
-          <p className="text-base font-medium text-landing-ink">{windowLabel}</p>
-          <p className={`mt-1 ${ui.muted}`}>
-            {formatMediaTime(totalSeconds)} saved, playing as one video.
+      <div className={ui.videoFrame} aria-busy={checking}>
+        <video
+          ref={videoRef}
+          playsInline
+          preload="auto"
+          aria-label={windowLabel}
+          className={ui.videoMedia}
+          onClick={() => {
+            if (!playDisabled) {
+              dispatch({ type: "toggle" });
+            }
+          }}
+          onError={onMediaError}
+          onLoadedMetadata={onLoadedMetadata}
+          onSeeked={onSeeked}
+          onTimeUpdate={onTimeUpdate}
+          onPlaying={() => {
+            const activeId =
+              sequenceRef.current.slices[machine.current.index]?.record.id;
+            const timingId = activeId
+              ? playbackTimingForRecord(activeId)
+              : undefined;
+            if (timingId) {
+              logPlaybackTiming(timingId, "playing");
+            }
+            dispatch({ type: "playing", command: machine.current.command });
+          }}
+          onPause={() =>
+            dispatch({ type: "paused", command: machine.current.command })
+          }
+          onEnded={onEnded}
+        />
+        <div className="pointer-events-none absolute left-2 top-2 z-10 flex max-w-[calc(100%-1rem)] flex-col gap-1 rounded-md bg-black/55 px-2 py-1.5 text-xs leading-4 text-white backdrop-blur-sm">
+          <p className="flex items-center gap-1.5">
+            <CalendarIcon />
+            <span className="min-w-0">{windowParts.date}</span>
+          </p>
+          <p className="flex items-center gap-1.5">
+            <ClockIcon />
+            <span className="min-w-0">{windowParts.time}</span>
           </p>
         </div>
-        {slice ? (
-          <div className="relative w-full overflow-hidden rounded-md bg-landing-ink">
-            {([0, 1] as const).map((which) => (
-              <video
-                key={which}
-                ref={which === 0 ? videoA : videoB}
-                playsInline
-                preload="auto"
-                aria-hidden={slot !== which}
-                aria-label={slot === which ? windowLabel : undefined}
-                className={
-                  slot === which
-                    ? "relative z-10 w-full"
-                    : "pointer-events-none absolute inset-0 z-0 w-full opacity-0"
+        <div className="absolute inset-x-0 bottom-0 z-20">
+          <p className="sr-only" aria-live="polite">
+            {phaseLabel(phase, elapsed)}
+          </p>
+          {bannerText ? (
+            <p className="pointer-events-none bg-black/70 px-3 py-1.5 text-center text-sm text-white">
+              {bannerText}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2 bg-black/55 px-2 py-2 text-white backdrop-blur-sm">
+            <PlayerIconButton
+              label={playLabel}
+              disabled={playDisabled}
+              onClick={() => dispatch({ type: "toggle" })}
+            >
+              <PlayPauseIcon playing={phase === "playing"} />
+            </PlayerIconButton>
+            <p className="shrink-0 text-xs font-medium tabular-nums">
+              {formatMediaTime(scrub ?? elapsed)}
+              <span className="font-normal text-white/60"> / </span>
+              {formatMediaTime(totalSeconds)}
+            </p>
+            <input
+              type="range"
+              min={0}
+              max={Math.max(totalSeconds, 0.1)}
+              step={0.1}
+              value={Math.min(scrub ?? elapsed, totalSeconds || 0)}
+              aria-label="Seek"
+              title="Seek"
+              onChange={(event) => setScrub(Number(event.target.value))}
+              onPointerUp={(event) => commitScrub(event.currentTarget.value)}
+              onKeyUp={(event) => commitScrub(event.currentTarget.value)}
+              onBlur={(event) => {
+                if (scrub !== null) {
+                  commitScrub(event.currentTarget.value);
                 }
-                onClick={slot === which ? togglePlay : undefined}
-                onError={() => handleError(which)}
-                onLoadedMetadata={() => park(which)}
-                onCanPlay={() => park(which)}
-                onSeeked={() => {
-                  park(which);
-                  syncElapsed(which);
-                }}
-                onTimeUpdate={() => syncElapsed(which)}
-                onPlay={() => {
-                  if (which === slotRef.current) {
-                    setPlaying(true);
-                  }
-                }}
-                onPlaying={() => handlePlaying(which)}
-                onPause={() => handlePause(which)}
-                onEnded={() => handleEnded(which)}
-              />
-            ))}
+              }}
+              className="h-1.5 min-w-24 flex-1 cursor-pointer accent-[#1f7a4c] disabled:cursor-not-allowed"
+            />
+            <PlayerIconButton
+              label={downloadLabel}
+              disabled={busy}
+              busy={downloading}
+              onClick={onDownload}
+            >
+              <DownloadIcon />
+            </PlayerIconButton>
+            <PlayerIconButton label="Close" onClick={onClose}>
+              <CloseIcon />
+            </PlayerIconButton>
           </div>
-        ) : null}
-        <div>
-          <p className={ui.hint}>Playback</p>
-          <p className="mt-1 text-base font-medium tabular-nums text-landing-ink">
-            {formatMediaTime(scrub ?? elapsed)}
-            <span className="font-normal text-landing-ink/45"> / </span>
-            {formatMediaTime(totalSeconds)}
-          </p>
-          <input
-            type="range"
-            min={0}
-            max={Math.max(totalSeconds, 0.1)}
-            step={0.1}
-            value={Math.min(scrub ?? elapsed, totalSeconds || 0)}
-            aria-label="Position in the whole video"
-            onChange={(event) => setScrub(Number(event.target.value))}
-            onPointerUp={(event) => commitScrub(event.currentTarget.value)}
-            onKeyUp={(event) => commitScrub(event.currentTarget.value)}
-            className="mt-2 h-1.5 w-full cursor-pointer accent-[#1f7a4c]"
-          />
-          <p className={`mt-2 ${ui.muted}`}>
-            {playing ? "Playing" : "Paused"}
-            {" · "}
-            {windowLabel}
-          </p>
-          <p className={`mt-1 ${ui.hint}`}>
-            This is the whole saved video. The bar does not restart at each minute.
-          </p>
-        </div>
-        {sequence.gaps.length > 0 ? (
-          <ul className="space-y-1">
-            {sequence.gaps.map((gap) => (
-              <li key={`${gap.startedAt}-${gap.endedAt}`} className={ui.hint}>
-                No saved picture for {formatLocalWindow(gap.startedAt, gap.endedAt)}. Playback
-                continues with the next saved clip.
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        {interruptions.length > 0 ? (
-          <ul className="space-y-1">
-            {interruptions.map((interval) => (
-              <li key={interval.id} className={ui.hint}>
-                This part was not played:{" "}
-                {formatLocalWindow(interval.startedAt, interval.endedAt)}. {interval.detail}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        <p className={ui.hint}>
-          Each part is checked on the server before it plays. A part that fails that check
-          stays out of the video.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={togglePlay} className={ui.btnSecondary}>
-            {playing ? "Pause" : "Play"}
-          </button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={onDownload}
-            className={ui.btnSecondary}
-          >
-            {downloading ? "Downloading…" : "Download"}
-          </button>
-          <button type="button" onClick={onClose} className={ui.btnSecondary}>
-            Close
-          </button>
         </div>
       </div>
+      {sequence.gaps.length > 0 ? (
+        <ul className="mt-3 space-y-1">
+          {sequence.gaps.map((gap) => (
+            <li key={`${gap.startedAt}-${gap.endedAt}`} className={ui.hint}>
+              {missingRecordingMessage(gap.startedAt, gap.endedAt)}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {interruptions.length > 0 ? (
+        <ul className="mt-3 space-y-1">
+          {interruptions.map((interval) => (
+            <li key={interval.id} className={ui.hint}>
+              This part was not played:{" "}
+              {formatLocalWindow(interval.startedAt, interval.endedAt)}.{" "}
+              {interval.detail}
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </section>
   );
+}
+
+function toMedia(sequence: PlaybackSequence): MediaSlice[] {
+  return sequence.slices.map((slice) => ({
+    id: slice.record.id,
+    cid: slice.record.ipfs_cid.trim(),
+    offsetSeconds: slice.offsetSeconds,
+    endSeconds: slice.endSeconds,
+  }));
+}
+
+function sameSource(video: HTMLVideoElement, url: string): boolean {
+  const attr = video.getAttribute("src");
+  return attr === url || video.src === url;
 }
 
 function isAbortError(error: unknown): boolean {
@@ -748,60 +690,144 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
-function sliceSpan(slice: PlaySlice): number {
-  return Math.max(0, slice.endSeconds - slice.offsetSeconds);
-}
-
-function differentSliceAfter(sequence: PlaybackSequence, fromIndex: number): number {
-  const cid = sequence.slices[fromIndex]?.record.ipfs_cid.trim() ?? "";
-  for (let index = fromIndex + 1; index < sequence.slices.length; index += 1) {
-    if (sequence.slices[index].record.ipfs_cid.trim() !== cid) {
-      return index;
-    }
+function phaseLabel(phase: PlaybackPhase, elapsed: number): string {
+  if (phase === "loading" || phase === "transitioning") {
+    return "Checking the next part…";
   }
-  return -1;
-}
-
-function sameSource(video: HTMLVideoElement, url: string): boolean {
-  const attr = video.getAttribute("src");
-  return attr === url || video.src === url;
-}
-
-function positionAt(
-  sequence: PlaybackSequence,
-  seconds: number
-): { index: number; mediaTime: number; elapsed: number } {
-  const spans = sequence.slices.map(sliceSpan);
-  const total = spans.reduce((sum, span) => sum + span, 0);
-  const clamped = Math.min(Math.max(0, seconds), Math.max(0, total - 0.05));
-  let cursor = 0;
-  for (let i = 0; i < sequence.slices.length; i += 1) {
-    const span = spans[i] ?? 0;
-    const last = i === sequence.slices.length - 1;
-    if (clamped < cursor + span || last) {
-      const into = Math.min(Math.max(0, clamped - cursor), Math.max(0, span));
-      return {
-        index: i,
-        mediaTime: sequence.slices[i].offsetSeconds + into,
-        elapsed: cursor + into,
-      };
-    }
-    cursor += span;
+  if (phase === "playing") {
+    return "Playing";
   }
-  return {
-    index: 0,
-    mediaTime: sequence.slices[0]?.offsetSeconds ?? 0,
-    elapsed: 0,
-  };
+  if (phase === "ended") {
+    return "Ended";
+  }
+  if (phase === "blocked") {
+    return "Verification failed";
+  }
+  if (elapsed < 0.5) {
+    return "Ready";
+  }
+  return "Paused";
 }
 
-function atSliceEnd(video: HTMLVideoElement, slice: PlaySlice): boolean {
-  if (video.ended) {
-    return true;
-  }
-  const fileEnd = Number.isFinite(video.duration) ? video.duration : slice.endSeconds;
-  const stopAt = Math.min(slice.endSeconds, fileEnd);
-  return video.currentTime >= stopAt - 0.08 && video.currentTime > slice.offsetSeconds + 0.3;
+function PlayerIconButton({
+  label,
+  disabled,
+  busy,
+  onClick,
+  children,
+}: {
+  label: string;
+  disabled?: boolean;
+  busy?: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-busy={busy || undefined}
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-white transition hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white disabled:cursor-not-allowed disabled:opacity-40"
+    >
+      {children}
+    </button>
+  );
+}
+
+function PlayPauseIcon({ playing }: { playing: boolean }) {
+  return playing ? (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-4 w-4 fill-current"
+    >
+      <rect x="3" y="2" width="3.5" height="12" rx="0.5" />
+      <rect x="9.5" y="2" width="3.5" height="12" rx="0.5" />
+    </svg>
+  ) : (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-4 w-4 fill-current"
+    >
+      <path d="M4 2.5v11l9-5.5-9-5.5z" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-3.5 w-3.5 shrink-0 stroke-current"
+      fill="none"
+    >
+      <rect x="2.5" y="3.5" width="11" height="10" rx="1" strokeWidth="1.6" />
+      <path
+        d="M2.5 6.5h11M5.5 2.2v2.6M10.5 2.2v2.6"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-3.5 w-3.5 shrink-0 stroke-current"
+      fill="none"
+    >
+      <circle cx="8" cy="8" r="5.25" strokeWidth="1.6" />
+      <path
+        d="M8 5v3.2L10.3 9.6"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function DownloadIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-4 w-4 stroke-current"
+      fill="none"
+    >
+      <path
+        d="M8 2.5v6.2M5.2 6.3 8 9.1l2.8-2.8M3.5 10.2V13h9v-2.8"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      className="h-4 w-4 stroke-current"
+      fill="none"
+    >
+      <path
+        d="M3.5 3.5l9 9M12.5 3.5l-9 9"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
 }
 
 function formatMediaTime(seconds: number): string {
