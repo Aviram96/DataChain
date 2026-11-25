@@ -109,16 +109,231 @@ alembic revision --autogenerate -m "describe change"
 alembic downgrade -1
 ```
 
-## Camera online/offline (US-4.6)
+`video_records` (Slice D / **CP-D.P6**, Alembic `20260914_000004`): one row per minute with camera id, start/end, `ipfs_cid`, SHA-256 `segment_hash`, and optional `tx_hash` (null until the chain tx succeeds). Unique `(camera_id, started_at)`. Ingest does not insert rows yet.
 
-List and detail responses include a **`status`** field: `"online"` or `"offline"`. The API probes each camera’s **`stream_url`** on demand (not stored in the database):
+Verification audit trail (Slice E / **CP-E.P8**, Alembic `20260917_000005`): `verification_attempts` plus per-minute child rows. See **Verification attempts** below.
 
-- **Rule:** open a short **TCP connection** to the URL’s host and port. Success → **online**; timeout or connection error → **offline**.
+## Camera online/offline (Slice B / CP-B.P4)
+
+List and detail responses include a **`status`** field: `"online"` or `"offline"`. Status is **offline** if either:
+
+- the live **`stream_url` probe** fails (HTTP/HTTPS request or RTSP OPTIONS / TCP), or
+- camera ingest marked the camera down after FFmpeg hit its restart cap (`ingest_offline_at`; Slice C / CP-C.P8). A new ingest run clears that flag when it starts.
+
+When `status` is `"offline"`, **`offline_reason`** distinguishes the cause (Slice C / CP-C.C1):
+
+- `"ingest_failed"` — ingest stopped after the FFmpeg restart cap (even if the URL still answers a probe)
+- `"unreachable"` — the live stream probe failed
+- `null` — camera is online
+
+If both apply, `ingest_failed` wins so the dashboard can explain that footage may be missing.
+
+List and detail also include **`ingest_offline_at`**: an ISO-8601 timestamp when ingest hit the restart cap, or `null` otherwise. The camera card and detail page use it to say **since …** when capture stopped.
+
+Probe details (not stored in the database):
+
+- **HTTP/HTTPS:** short request to the stream URL (HEAD, then ranged GET). Any HTTP response (including 401/404) counts as **online**; network failures → **offline**.
+- **RTSP:** TCP connect to the RTSP port, then a minimal `OPTIONS` request when possible. An open RTSP port counts as reachable.
 - **Default ports** when omitted: `http` → 80, `https` → 443, `rtsp` → 554.
-- **Not validated:** HTTP status codes, RTSP handshake, or whether a video stream is playable—only host reachability.
-- **Timeout:** `CAMERA_PROBE_TIMEOUT_SECONDS` (default `2`, clamped 0.5–10). List endpoints probe cameras on the current page in parallel (up to 10 workers).
+- **Not validated:** whether a full video stream is playable end-to-end (codec/auth beyond basic reachability).
+- **Timeout:** `CAMERA_PROBE_TIMEOUT_SECONDS` (default `2`, clamped 0.5–10). List endpoints probe in parallel (up to 10 workers).
+
+### Camera list query params
+
+| Param | Meaning |
+| ----- | ------- |
+| `page`, `page_size` | Pagination (default page size 10, max 50) |
+| `q` | Case-insensitive name search |
+| `status` | `online` or `offline` (live probe **or** ingest restart-cap flag) |
+| `sort` | Default `created_at_desc` (newest first). Also `created_at_asc`, `name_asc`, `name_desc` |
+
+### Camera recordings (Slice E / CP-E.P1–P2)
+
+`GET /cameras/{id}/recordings` lists **one-minute** `video_records` for an **owned, active** camera (same 404 as camera detail if the camera is missing or not yours). Newest start time first. Pagination matches the camera list (`page`, `page_size`, default 10, max 50).
+
+Optional overlap window (ISO-8601):
+
+| Param | Meaning |
+| ----- | ------- |
+| `started_at` | Include segments that end after this instant |
+| `ended_at` | Include segments that start before this instant |
+
+Both set: end must be after start (HTTP **400** otherwise). The camera detail page sends a local date plus start/end times as UTC ISO values.
+
+`GET /cameras/{id}/recordings/{record_id}/playback` verifies that owned segment (`verify_recording_range`: database metadata, on-chain `getSegment`, and the file hash) and streams the file only when it is verified. Any other result is HTTP **409** JSON and no media. Unknown record: **404**.
+
+`GET /cameras/{id}/recordings/download` (CP-E.P10) requires **`started_at` and `ended_at`**. It verifies every overlapping segment, then returns `multipart/form-data` with a JSON report and one `.mp4` of the verified files (FFmpeg `-c copy` when there are two or more). A partial file contains only those portions, in order. No verified segment, including an empty range: HTTP **409** JSON report and no file. Owner 404 matches the list. More than 24 hours: **400**. The API retrieves file bytes through `IPFS_GATEWAY` (default `https://gateway.pinata.cloud`) while verifying; the browser does not play that gateway URL. Concat failure: **502** (FFmpeg missing: **503**). FFmpeg must be on PATH.
+
+### Verification attempts (Slice E / CP-E.P8)
+
+`POST /cameras/{id}/verification-attempts` stores a client-submitted report (overall status, window, scope `full` | `partial` | `minute`, and per-minute rows). That route does **not** call `getSegment` or re-check the chain. Owner 404 matches an active camera. Inverted window: **400**. More than 24 hours of minutes, empty minutes, or invalid scope/status: **422**.
+
+Playback and download write their own audit row after `verify_recording_range` returns, including an archived camera the owner can still play. One request stores one `verification_attempts` row (`operation` `playback` or `download`) and one `verification_attempt_minutes` row per checked segment. Statuses include `verified`, `tampered`, `missing`, `unavailable`, and `failed`. A database error while saving that row is logged and does not change the playback or download response. Apply Alembic `20260917_000005` and `20261118_000006`.
+
+`GET /cameras/{id}/verification-attempts` is a thin paginated list of attempt headers for an active camera (newest first; same `page` / `page_size` as recordings). `operation` is null on older client-submitted rows.
+
+### Archive, restore, and unique names
+
+- `POST /cameras/{id}/archive` sets **`deleted_at`**. The camera leaves `GET /cameras`. The same row, recording IDs, CIDs, and chain anchors stay (`ON DELETE RESTRICT` on `video_records.camera_id`). A running `scripts/ingest_camera.py` stops that camera on its next active check and does not mark the stop as an ingest failure. `DELETE /cameras/{id}` performs this same archive and remains for the current dashboard.
+- `GET /cameras/archived` lists only the caller’s archived cameras (same paging, search, and sort as the active list).
+- The owner can still `GET /cameras/{id}` and list, play, and download that camera’s recordings. Playback and download still verify before serving bytes. `PATCH /cameras/{id}` returns **409** while the camera is archived. Another user’s camera returns **404**.
+- `POST /cameras/{id}/restore` clears `deleted_at` on that same camera id. The API does not start FFmpeg. A running supervisor discovers that same camera id and records when the stream is available. If another active camera already has that name, the response is **409** and the archived row is unchanged.
+- `POST /cameras/{id}/permanent-delete` removes only an archived camera that has no video records and no verification attempts. The JSON body must include `confirm_name` equal to the stored camera name. Another user's camera is **404**. An active camera is **409**. A camera that still has recordings or verification history is **409** with "This camera contains saved recordings or related data and cannot be permanently deleted." A name mismatch is **400**. Ongoing ingestion is **409**. The delete removes that camera row only. Recordings, verification history, IPFS objects, local files, and blockchain anchors are not modified. `DELETE /cameras/{id}` still archives.
+- **Archive** keeps the camera row and its historical recordings. **Restore** clears the archive and returns that same camera to the active list. **Delete permanently** is only for an archived camera with nothing saved under it.
+- Active cameras must have a **unique name per user** (case-insensitive); duplicates return HTTP 409.
+
+### Stream attach for ingest (CP-B.P5)
+
+`app.services.camera_stream.attach_camera_stream(db, camera_id)` returns the `stream_url` for an **active** (non-deleted) camera. Continuous FFmpeg receive is Slice C / **CP-C.P2** (`scripts/ingest_camera.py`).
 
 After changing `.env`, restart uvicorn; reload may not pick up new values.
+
+## Simulated CCTV feed (Slice C / CP-C.P1)
+
+This is the **Slice C hardware-free entry point**: **loop a local `.mp4` at real-time speed** as if it were a live camera feed, so ingest can be developed without RTSP cameras. This uses **FFmpeg** on your machine (install separately; not a Python package).
+
+**Prerequisites:** FFmpeg on `PATH` ([download](https://ffmpeg.org/download.html)).
+
+From `backend/` with the venv activated:
+
+```powershell
+# Option A: explicit file
+python scripts/simulate_cctv_feed.py --source C:\path\to\sample.mp4
+
+# Option B: environment variable (see backend/.env.example)
+$env:CCTV_SOURCE_MP4 = "C:\path\to\sample.mp4"
+python scripts/simulate_cctv_feed.py
+```
+
+The process writes a continuous **MPEG-TS** stream to **stdout** (suitable for piping into the chunking step in the next slice). Press **Ctrl+C** to stop; the script terminates FFmpeg cleanly.
+
+**Note:** Use a short sample clip for testing; the file loops forever until you stop the script.
+
+## Camera stream ingest (Slice C / CP-C.P2–P8)
+
+Receive the **live `stream_url`** of a registered camera with FFmpeg (HTTP/HTTPS or RTSP) and split it into **1-minute `.mp4` segments** under `backend/temp/<camera-id>/`. Each file is named `{camera-uuid}_{YYYYMMDDTHHMMSS}Z.mp4` (camera ID + recording start). End time is start plus the segment duration (default 60s); parse with `app.services.segment_identity.parse_segment_path`. After a file is closed, a **basic integrity check** runs before later stages: complete MP4 (`ftyp` + `moov`), a video stream (ffprobe), and a SHA-256 fingerprint. Failed files stay in `temp/` and are not handed on. **Passing files stay under `temp/<camera-id>/` until Pinata, chain anchor, and DB save succeed.** Temp files are **deleted only after that succeeds**; failures stay on disk and are retried. Soft-deleted cameras are skipped. Set `PINATA_JWT`, `DATACHAIN_CONTRACT_ADDRESS`, and `DATACHAIN_PRIVATE_KEY` (or `AMOY_PRIVATE_KEY`). Apply Alembic through `20260914_000004`.
+
+If FFmpeg exits unexpectedly, ingest **restarts it** (delay `CCTV_FFMPEG_RESTART_DELAY_SECONDS`, default 2s) up to **`CCTV_FFMPEG_MAX_RESTARTS` (default 10 for camera ingest)**. Each attempt is logged with the camera id. After the cap, ingest stops and sets **`ingest_offline_at`** so the camera shows **offline** on the dashboard even if the URL still answers a probe (`offline_reason`: `ingest_failed`). A later ingest run clears that flag when it starts. Apply Alembic revision `20260824_000003`.
+
+From `backend/` with the venv activated, Postgres running, and migrations applied:
+
+```powershell
+# One camera
+python scripts/ingest_camera.py --camera-id 00000000-0000-0000-0000-000000000001
+
+# Every active camera (one FFmpeg process per camera)
+python scripts/ingest_camera.py --all
+
+# Keep recording active cameras until Ctrl+C.
+# Picks up cameras you add or restore, and stops a camera when you archive it.
+python scripts/ingest_camera.py --supervise
+```
+
+Start the automatic recording supervisor with:
+
+```bash
+cd backend
+.venv/bin/python scripts/ingest_camera.py --supervise
+```
+
+`--supervise` is a separate process from the API. The API does not start it, and recording does not begin until this process is running. Run one supervisor. About every 5 seconds it reads active cameras. A camera you just added, and a camera you restored under its original id, are picked up the same way. When the RTSP source accepts a connection, that camera’s FFmpeg starts. When the source is unavailable, the supervisor waits and tries again (2 seconds, doubling up to 30 seconds). That retry does not set `ingest_offline_at`. Archive removes the camera from the active list; the supervisor stops its ingest and does not publish the open segment. Archived recordings stay on that camera id for playback and download.
+
+The dashboard **Online/Offline** badge is stream reachability (or an older `ingest_failed` flag). It does not mean a segment is being recorded right now. A camera can be online while the supervisor is still connecting, and offline while the supervisor is still retrying.
+
+The supervisor takes a PostgreSQL advisory lock per camera, so a second supervisor or a manual `--camera-id` / `--all` run will not start a second FFmpeg for a camera that is already being recorded.
+
+Ctrl+C stops ingest. RTSP uses TCP transport. Requires FFmpeg on `PATH`. Optional `--temp-dir` and `--duration` (default 60 seconds). `--loop` plays a file or HTTP MP4 in real time and repeats it, so ingest keeps writing a new minute until you stop it.
+
+To simulate a live camera from a video file, without using this PC’s webcam, from `backend/`:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\live_camera.py --source C:\path\to\sample2.mp4
+```
+
+That plays the file in real time, repeats it, and serves `http://127.0.0.1:8090/live.mjpg`. Put that URL on the camera, then run `ingest_camera.py` without `--loop`. The page shows the live picture. Each closed minute is pinned, anchored, and saved. `--device "Integrated Camera"` uses the webcam instead.
+
+## Video chunking (Epic 5, slice 2)
+
+Split a local `.mp4` into **1-minute** segments written to **`backend/temp/`** (gitignored). Uses FFmpeg’s **segment muxer** with `-segment_time 60`.
+
+From `backend/` with the venv activated:
+
+```powershell
+# One pass: chunk the whole file, then exit (good for short test clips)
+python scripts/chunk_cctv_feed.py --source C:\path\to\sample.mp4
+
+# Continuous CCTV-style loop: keeps chunking until Ctrl+C
+python scripts/chunk_cctv_feed.py --source C:\path\to\sample.mp4 --loop
+```
+
+Output files: `backend/temp/chunk_000.mp4`, `chunk_001.mp4`, … (directory created automatically).
+
+Optional flags: `--temp-dir DIR`, `--duration SECONDS` (default **60**), or env vars `CCTV_TEMP_DIR` / `CCTV_CHUNK_DURATION_SECONDS` (see `backend/.env.example`).
+
+**Tip:** For a 2–3 minute sample without `--loop`, you should see 2–3 chunk files and the process exits on its own.
+
+## Temp cleanup worker (Epic 5, slice 3)
+
+After a chunk is **successfully processed**, a background worker **deletes it from `temp/`** so disk use stays bounded. Epic 6 will replace the stub processor with IPFS upload + chain anchor + DB write; until then the worker logs and deletes (stub success).
+
+This Epic 5 file-chunk path is separate from **camera ingest** (`ingest_camera.py`), which uploads to Pinata, anchors on-chain, saves `video_records`, then deletes the temp file.
+
+**With chunking** — process and delete each segment as it lands:
+
+```powershell
+python scripts/chunk_cctv_feed.py --source C:\path\to\sample.mp4 --cleanup-after-success
+```
+
+**After chunking** — drain existing files in `temp/` once:
+
+```powershell
+python scripts/process_temp_chunks.py
+```
+
+The worker only deletes files matching `chunk_*.mp4` **inside** the configured temp directory (never arbitrary paths).
+
+## FFmpeg crash recovery (Epic 5, slice 4 / Slice C CP-C.P8)
+
+Continuous ingest **restarts FFmpeg automatically** after a non-zero exit. One-pass chunking does not restart (normal end of file is exit 0).
+
+- **Delay before restart:** `CCTV_FFMPEG_RESTART_DELAY_SECONDS` (default **2**)
+- **Cap retries:** `CCTV_FFMPEG_MAX_RESTARTS` — **camera ingest** defaults to **10**, then marks the camera offline. Feed simulator and `chunk_cctv_feed.py --loop` stay unlimited unless this env var is set.
+- **Stop:** Ctrl+C still terminates the current FFmpeg process and exits cleanly
+
+Implementation: `backend/app/services/ffmpeg_supervisor.py` (shared by feed simulator, loop chunker, and `ingest_camera.py`).
+
+## Pinata IPFS upload (Slice D / CP-D.P1)
+
+Upload **one** local `.mp4` segment to Pinata and print its **CID**. Camera ingest also calls this after each integrity-checked minute.
+
+1. Create a Pinata JWT (API key with pinning). Put it in `backend/.env` as `PINATA_JWT` (never commit it).
+2. From `backend/` with the venv activated (`pip install -r requirements.txt` if you just pulled):
+
+```powershell
+python scripts/upload_segment_ipfs.py path\to\segment.mp4
+```
+
+Optional `PINATA_TIMEOUT_SECONDS` (default **120**). Implementation: `app/services/pinata_ipfs.py` (Pinata `pinFileToIPFS` REST API). Tests mock HTTP in `tests/test_pinata_ipfs.py`.
+
+## Polygon Amoy anchor (Slice D / CP-D.P3)
+
+Send **one** `anchorSegment` transaction with **Web3.py**. RPC timeouts and gas/fee errors are **retried** (default 3 attempts). A failed anchor raises; ingest keeps the temp file. Camera ingest calls this after a successful Pinata CID.
+
+Set `DATACHAIN_CONTRACT_ADDRESS` (from `npm run deploy:amoy`) and `DATACHAIN_PRIVATE_KEY` (the **owner** / deployer testnet key). Optional: `POLYGON_RPC_URL`, `ANCHOR_MAX_ATTEMPTS`.
+
+```powershell
+python scripts/anchor_segment.py --camera-id UUID --started-at 1700000000 --ended-at 1700000060 --cid bafy... --segment-hash <64-char-sha256-hex>
+```
+
+Implementation: `app/services/chain_anchor.py`. Tests in `tests/test_chain_anchor.py` mock the send path.
+
+## Polygon Amoy read (Slice D / CP-D.P5)
+
+Read one `getSegment` record with **Web3.py** (camera id, start/end, CID, segment hash). This is a **view call**: no signing key and **no PostgreSQL**, so metadata is still readable if the database is down.
+
+Uses the same `DATACHAIN_CONTRACT_ADDRESS` and `POLYGON_RPC_URL` as anchoring. Missing anchors raise; the helper does not invent a row.
+
+Implementation: `get_segment` in `app/services/chain_anchor.py`. Tests in `tests/test_chain_anchor.py` mock the call path.
 
 ## Tests
 
@@ -126,6 +341,12 @@ From `backend/` with dev dependencies installed:
 
 ```bash
 pytest -q
+```
+
+Slice D mocked integration (CP-D.P9): Pinata HTTP and the Web3 send path are faked; the CID and tx hash on the chain request must match `video_records`.
+
+```bash
+pytest -q tests/test_ingest_ipfs_chain_db.py
 ```
 
 ## Lint and format

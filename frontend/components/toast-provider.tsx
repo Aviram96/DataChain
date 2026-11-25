@@ -9,7 +9,14 @@ import {
   type ReactNode,
 } from "react";
 
-export type ToastVariant = "error" | "success";
+import {
+  toastClassName,
+  toastLabel,
+  toastLabelClassName,
+  type ToastVariant,
+} from "@/lib/toast-variants";
+
+export type { ToastVariant };
 
 export type Toast = {
   id: string;
@@ -24,13 +31,6 @@ type ToastContextValue = {
 const ToastContext = createContext<ToastContextValue | null>(null);
 
 const DISMISS_MS = 5000;
-
-function toastStyles(variant: ToastVariant): string {
-  if (variant === "error") {
-    return "border-red-500/40 bg-red-950/90 text-red-50";
-  }
-  return "border-emerald-500/40 bg-emerald-950/90 text-emerald-50";
-}
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -67,8 +67,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           <div
             key={toast.id}
             role="alert"
-            className={`pointer-events-auto rounded-lg border px-4 py-3 text-sm shadow-lg ${toastStyles(toast.variant)}`}
+            className={`pointer-events-auto rounded-xl border px-4 py-3 text-sm ${toastClassName(toast.variant)}`}
           >
+            <span className={toastLabelClassName(toast.variant)}>
+              {toastLabel(toast.variant)}
+            </span>
             {toast.message}
           </div>
         ))}

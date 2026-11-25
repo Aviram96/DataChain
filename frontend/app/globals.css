@@ -2,6 +2,79 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --landing-ink: #0c1210;
+  --landing-fog: #e8efe9;
+  --landing-mist: #b7c5ba;
+  --landing-accent: #1f7a4c;
+  --landing-accent-soft: #2f9a63;
+  --landing-caution: #9a7209;
+  --landing-warn: #c45c26;
+}
+
 body {
-  @apply min-h-screen bg-slate-950 text-slate-100 antialiased;
+  @apply min-h-screen bg-landing-fog text-landing-ink antialiased;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+.font-display {
+  font-family: var(--font-display), Georgia, serif;
+}
+
+@keyframes landing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes landing-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(-2%, 1%, 0) scale(1.04);
+  }
+}
+
+.landing-rise {
+  animation: landing-rise 0.8s ease-out both;
+}
+
+.landing-rise-delay-1 {
+  animation-delay: 0.12s;
+}
+
+.landing-rise-delay-2 {
+  animation-delay: 0.24s;
+}
+
+.landing-rise-delay-3 {
+  animation-delay: 0.36s;
+}
+
+.landing-atmosphere {
+  animation: landing-drift 28s ease-in-out infinite alternate;
+}
+
+.app-shell {
+  position: relative;
+  isolation: isolate;
+  min-height: 100svh;
+}
+
+.app-shell::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(120% 80% at 8% 0%, #d7e4d9 0%, transparent 55%),
+    radial-gradient(90% 70% at 92% 12%, #c5d4c8 0%, transparent 50%),
+    linear-gradient(165deg, #eef3ef 0%, #dfe8e1 48%, #d0ddd3 100%);
 }

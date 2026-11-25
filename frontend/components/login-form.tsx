@@ -7,6 +7,7 @@ import { FormEvent, useState } from "react";
 import { networkErrorMessage } from "@/lib/api";
 import { AuthApiError, login } from "@/lib/auth-api";
 import { setAccessToken } from "@/lib/auth-token";
+import { ui } from "@/lib/ui";
 
 import { useAuth } from "./auth-provider";
 import { useToast } from "./toast-provider";
@@ -27,8 +28,8 @@ export function LoginForm() {
       const token = await login({ email, password });
       setAccessToken(token.access_token);
       await refreshSession();
-      showToast("Signed in successfully.", "success");
-      router.push("/");
+      showToast("Logged in successfully.", "success");
+      router.push("/cameras");
     } catch (error) {
       if (error instanceof AuthApiError && error.status === 401) {
         showToast(error.message, "error");
@@ -44,8 +45,8 @@ export function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="space-y-1">
-        <label htmlFor="email" className="block text-sm text-slate-300">
+      <div className="space-y-1.5">
+        <label htmlFor="email" className={ui.label}>
           Email
         </label>
         <input
@@ -56,11 +57,11 @@ export function LoginForm() {
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none ring-emerald-500/50 focus:ring-2"
+          className={ui.input}
         />
       </div>
-      <div className="space-y-1">
-        <label htmlFor="password" className="block text-sm text-slate-300">
+      <div className="space-y-1.5">
+        <label htmlFor="password" className={ui.label}>
           Password
         </label>
         <input
@@ -71,23 +72,20 @@ export function LoginForm() {
           required
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none ring-emerald-500/50 focus:ring-2"
+          className={ui.input}
         />
       </div>
       <button
         type="submit"
         disabled={submitting}
-        className="w-full rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
+        className={`w-full ${ui.btnPrimary}`}
       >
-        {submitting ? "Signing in…" : "Sign in"}
+        {submitting ? "Logging in…" : "Log in"}
       </button>
-      <p className="text-center text-sm text-slate-400">
+      <p className={`text-center ${ui.muted}`}>
         No account?{" "}
-        <Link
-          href="/register"
-          className="text-emerald-400 hover:text-emerald-300"
-        >
-          Register
+        <Link href="/register" className={ui.link}>
+          Sign up
         </Link>
       </p>
     </form>

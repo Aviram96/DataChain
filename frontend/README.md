@@ -34,6 +34,12 @@ Copy `frontend/.env.example` to `frontend/.env.local` only if you need a custom 
 
 By default, the dev server proxies **`/api/*`** → `http://127.0.0.1:8000/*` (see `next.config.ts`), so login/register avoid browser CORS issues.
 
+**Watch playback (CP-E.C5):** choosing a saved time plays the contiguous stretch as one sequence. Each segment is loaded from `GET /cameras/{id}/recordings/{record_id}/playback` after the API verifies it. The next segment is verified before it is preloaded. A segment that fails verification is not played. The page does not open a public IPFS gateway URL.
+
+**Verification:** the camera page does not read the blockchain. Watch and Download ask the API to verify each segment. A segment that fails verification is not played. The page does not show a separate Verify button or a verification-history list.
+
+**Download:** after Watch opens a range, **Download** in the player asks the API to verify that whole range and save an `.mp4` of the verified portions only. A range with no verified segment saves nothing. The backend needs FFmpeg on PATH.
+
 **Before using `/login` or `/register`, start the backend:**
 
 ```bash
@@ -52,11 +58,14 @@ Quick API check: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health) sh
 
 ## Routes
 
-- `/` — Home
-- `/login` — Sign in (error toast on wrong password); header updates after sign-in
-- `/register` — Create account (error toast on duplicate email)
-- Header — When signed in: **Signed in as** email + **Log out** (clears `datachain_access_token`); when signed out: Sign in / Register links
-- `/project-status` — Example secondary page
+- `/` — Marketing landing (no top toolbar): project / problem / solution + Sign up / Log in; signed-in users redirect to `/cameras`
+- `/login` — Log in (error toast on wrong password); header updates after sign-in
+- `/register` — Sign up (error toast on duplicate email)
+- Header (app pages) — Brand label **DataChain** (not a link). When signed in: **Cameras**, **Archive**, **Add camera**, and an account menu with the email and **Log out**. When signed out: Log in / Sign up
+- `/cameras` — Camera dashboard (main app surface after auth)
+- `/cameras/new`, `/cameras/[id]`, `/cameras/[id]/edit` — add, detail (recordings search, Watch, Verify, Download, verification history), edit
+- Camera **Online/Offline** badge is whether the stream can be reached, or whether an older ingest run gave up after its FFmpeg restart cap (`offline_reason` `ingest_failed`, with **since** on the card). It does not mean a recording is in progress. Automatic recording is a separate supervisor: from `backend/`, `.venv/bin/python scripts/ingest_camera.py --supervise`. While that process is running, a new or restored active camera is recorded when its stream is available, and Archive stops that recording. Restore does not need a manual start. Historical playback and download stay available after Archive.
+- `/project-status` — Internal/dev status page (not linked from landing)
 
 Expired or invalid JWTs clear `datachain_access_token` in localStorage and redirect to `/login` (toast on protected pages). Session is checked on app load via `GET /auth/me` and on any authenticated API call that returns 401.
 

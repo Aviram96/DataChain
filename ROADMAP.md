@@ -1,6 +1,6 @@
 # Datachain — Roadmap
 
-This roadmap translates the Datachain vision (hybrid Web2/Web3 CCTV integrity platform) into **epics**, **tasks**, and **user stories**. Order within an epic can be parallelized where dependencies allow; **Epic 1** is the foundation for everything else.
+This roadmap translates the Datachain vision (hybrid Web2/Web3 CCTV integrity platform) into **epics**, **sprints**, and **user stories**. Order within an epic can be parallelized where dependencies allow; **Epic 1** is the foundation for everything else.
 
 ---
 
@@ -11,16 +11,18 @@ This roadmap translates the Datachain vision (hybrid Web2/Web3 CCTV integrity pl
 Keep the **Status** column in this table aligned with the repository as work lands (see **Documentation updates** in `AGENTS.md`).
 
 
-| Type | Item                                                               | Status                                                                                                                |
-| ---- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| Task | Initialize monorepo structure (`frontend`, `backend`, `contracts`) | Done — all three packages scaffolded; `contracts/` uses **Hardhat 3** (TypeScript, Viem, `node:test`); see `contracts/README.md` |
-| Task | Next.js boilerplate with Tailwind CSS and routing                  | Done — `frontend/` App Router, Tailwind, `/` and `/project-status`; see `frontend/README.md`                          |
-| Task | Python FastAPI boilerplate and virtual environment                 | Done — `backend/` (`GET /health`), `requirements.txt`, venv docs in `backend/README.md`                               |
-| Task | PostgreSQL via Docker Compose                                      | Done — root `docker-compose.yml`, documented in `README.md`                                                           |
-| Task | Hardhat environment for Solidity smart contracts                   | Done — **Hardhat 3** (`@nomicfoundation/hardhat-toolbox-viem`); `npm run compile` / `npm test` in `contracts/`        |
-| Task | ESLint and Prettier (frontend)                                     | Done — `frontend/eslint.config.mjs`, Prettier config; scripts in `frontend/README.md`                                 |
-| Task | Black and Flake8 (backend)                                         | Done — `backend/pyproject.toml`, `backend/.flake8`, documented in `backend/README.md`                                 |
-| Task | GitHub Actions workflow for automated testing and linting          | Done — `.github/workflows/ci.yml` (frontend lint/format/build, backend Black/Flake8, contracts compile/test) on `main` PRs and pushes |
+| Story   | Description                                                                                              | Status                                                                                                                |
+| ------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| US-1.1  | As a developer, I want a monorepo with `frontend`, `backend`, and `contracts` packages so the team can work in one repository. | Done — all three packages scaffolded; `contracts/` uses **Hardhat 3** (TypeScript, Viem, `node:test`); see `contracts/README.md` |
+| US-1.2  | As a developer, I want a Next.js application scaffold so I can build the frontend.                         | Done — `frontend/` App Router; see `frontend/README.md`                                                                 |
+| US-1.3  | As a developer, I want Tailwind CSS configured in the frontend so UI styling is consistent.              | Done — `frontend/tailwind.config.ts`, `globals.css`; see `frontend/README.md`                                          |
+| US-1.4  | As a developer, I want App Router pages and navigation so users can move between screens.                | Done — `/`, `/project-status`, and later auth/camera routes; see `frontend/README.md`                                 |
+| US-1.5  | As a developer, I want a FastAPI backend with a documented virtual environment so I can build the API.   | Done — `backend/` (`GET /health`), `requirements.txt`, venv docs in `backend/README.md`                               |
+| US-1.6  | As a developer, I want PostgreSQL available via Docker Compose so I can run the database locally without manual setup. | Done — root `docker-compose.yml`, documented in `README.md`                                                           |
+| US-1.7  | As a developer, I want a Hardhat environment for Solidity smart contracts so I can compile and test on-chain logic. | Done — **Hardhat 3** (`@nomicfoundation/hardhat-toolbox-viem`); `npm run compile` / `npm test` in `contracts/`        |
+| US-1.8  | As a developer, I want ESLint and Prettier configured for the frontend so code style stays consistent.   | Done — `frontend/eslint.config.mjs`, Prettier config; scripts in `frontend/README.md`                                 |
+| US-1.9  | As a developer, I want Black and Flake8 configured for the backend so Python formatting stays consistent. | Done — `backend/pyproject.toml`, `backend/.flake8`, documented in `backend/README.md`                                 |
+| US-1.10 | As a developer, I want a GitHub Actions workflow that runs lint and tests on pull requests so regressions are caught early. | Done — `.github/workflows/ci.yml` (frontend lint/format/build, backend Black/Flake8, contracts compile/test) on `main` PRs and pushes |
 
 
 **Exit criteria**: Local dev can start DB, run API and frontend, compile contracts, and CI passes lint on sample workflow.
@@ -34,12 +36,13 @@ Keep the **Status** column in this table aligned with the repository as work lan
 **Goal**: Persistent relational model for users, cameras, and video records with migrations.
 
 
-| Type | Item                                                                           | Status |
-| ---- | ------------------------------------------------------------------------------ | ------ |
-| Task | User schema (SQLAlchemy)                                                       | Done — `backend/app/models.py` (`users`) |
-| Task | Camera schema (linked to User)                                                 | Done — `backend/app/models.py` (`cameras.user_id` FK → `users.id`) |
-| Task | VideoRecord schema (IPFS CID, blockchain TxHash, timestamps, camera reference) | Done — `backend/app/models.py` (`video_records.camera_id` FK, `cid`, `tx_hash`, timestamps) |
-| Task | Alembic configuration and migration workflow                                   | Done — `backend/alembic.ini`, `backend/alembic/env.py`, initial migration in `backend/alembic/versions/` |
+| Story  | Description                                                                                              | Status |
+| ------ | -------------------------------------------------------------------------------------------------------- | ------ |
+| US-2.1 | As the system, I need to persist user accounts in PostgreSQL so authentication can reference them.       | Done — `backend/app/models.py` (`users`) |
+| US-2.2 | As the system, I need to store cameras linked to users so each owner sees only their devices.            | Done — `backend/app/models.py` (`cameras.user_id` FK → `users.id`) |
+| US-2.3 | As the system, I need each video record linked to a camera with segment start and end timestamps.         | Done — `backend/app/models/video_record.py` (`camera_id`, `started_at`, `ended_at`) |
+| US-2.4 | As the system, I need each video record to store an IPFS CID and blockchain transaction hash.            | Done — `ipfs_cid`; `tx_hash` nullable until anchored; `segment_hash` added in Alembic `20260914_000004` |
+| US-2.5 | As a developer, I want Alembic migrations so database schema changes are versioned and reproducible.    | Done — `backend/alembic.ini`, `backend/alembic/env.py`, initial migration in `backend/alembic/versions/` |
 
 
 **Exit criteria**: Migrations apply cleanly; models reflect relationships needed for CRUD and the video pipeline.
@@ -56,17 +59,19 @@ Keep the **Status** column in this table aligned with the repository as work lan
 
 | Story  | Description                                                              | Status |
 | ------ | ------------------------------------------------------------------------ | ------ |
-| US-3.1 | As a user, I want to register with email and password.                   | Done — `POST /auth/register` in `backend/app/routers/auth.py`; email normalized; HTTP 409 on duplicate; `User` in `backend/app/models/user.py`; responses omit secrets |
-| US-3.2 | As the backend, I need to hash passwords with bcrypt before saving.      | Done — `hash_password` / `verify_password` in `backend/app/security/password.py`; optional `BCRYPT_ROUNDS`; tests in `backend/tests/test_password.py` |
+| US-3.1 | As a user, I want to register an account with email and password.        | Done — `POST /auth/register` in `backend/app/routers/auth.py`; email normalized; HTTP 409 on duplicate; `User` in `backend/app/models/user.py`; responses omit secrets |
+| US-3.2 | As the system, I need to hash user passwords with bcrypt before saving.  | Done — `hash_password` / `verify_password` in `backend/app/security/password.py`; optional `BCRYPT_ROUNDS`; tests in `backend/tests/test_password.py` |
 | US-3.3 | As a user, I want to log in and receive a secure JWT.                    | Done — `POST /auth/login`, `GET /auth/me`; JWT (HS256) in `backend/app/security/jwt_tokens.py`; `get_current_user` in `backend/app/deps_auth.py`; `JWT_SECRET_KEY` required at startup |
-| US-3.4 | As a user, I want UI error toasts for wrong password or duplicate email. | Done — `/login` and `/register` in `frontend/`; error toasts on HTTP 401 (login) and 409 (register); `ToastProvider` in `frontend/components/toast-provider.tsx`; API via `frontend/lib/auth-api.ts`; CORS for dev in `backend/app/main.py` |
-| US-3.5 | As the system, I need JWT expiration handling and automatic logout.      | Done — `frontend/lib/auth-token.ts`, `auth-fetch.ts`, `auth-session.ts`; `AuthSession` on load (`GET /auth/me` + client `exp`); 401 clears token and redirects to `/login` with optional toast |
-| US-3.6 | As a user, I want to log out securely and clear session state.           | Done — `AuthProvider` + `SiteHeader` (`Signed in as …`, Log out); `logout()` clears token and expiry timer; login calls `refreshSession()` for header state |
+| US-3.4 | As a user, I want a UI error toast when I enter the wrong password at login. | Done — `/login` in `frontend/`; error toast on HTTP 401; `ToastProvider` in `frontend/components/toast-provider.tsx`; API via `frontend/lib/auth-api.ts` |
+| US-3.5 | As a user, I want a UI error toast when I try to register with an email that is already in use. | Done — `/register` in `frontend/`; error toast on HTTP 409; CORS for dev in `backend/app/main.py` |
+| US-3.6 | As the system, I need to detect JWT expiration on the client before protected requests fail silently. | Done — `frontend/lib/auth-token.ts`, `auth-session.ts`; client reads JWT `exp` on load |
+| US-3.7 | As the system, I need to log the user out and redirect to login when the session is expired or invalid. | Done — `frontend/lib/auth-fetch.ts`; 401 clears token and redirects to `/login` with optional toast |
+| US-3.8 | As a user, I want to log out securely and clear my session.            | Done — `AuthProvider` + `SiteHeader` account menu (email, Log out); `logout()` clears token and expiry timer; login calls `refreshSession()` for header state |
 
 
 **Exit criteria**: Registration, login, logout, and protected routes behave per stories; secrets not logged.
 
-**Progress note**: **US-3.1–US-3.6** complete on branch `epic3` (registration, login, JWT expiry handling, logout UX). Epic 3 exit criteria met for auth stories; refresh tokens remain out of scope.
+**Progress note**: **US-3.1–US-3.8** complete on branch `epic3` (registration, login, JWT expiry handling, logout UX). Epic 3 exit criteria met for auth stories; refresh tokens remain out of scope.
 
 ---
 
@@ -77,18 +82,20 @@ Keep the **Status** column in this table aligned with the repository as work lan
 
 | Story  | Description                                                            | Status |
 | ------ | ---------------------------------------------------------------------- | ------ |
-| US-4.1 | As a user, I want a form to add a camera (Name, IP/URL, Location).     | Done — `/cameras/new`, `CameraForm` in `frontend/components/camera-form.tsx`, `createCamera` in `frontend/lib/cameras-api.ts`; JWT via `authFetch`; `RequireAuth` redirects guests to `/login` |
-| US-4.2 | As an API, I need to validate and persist camera data to PostgreSQL.   | Done — `Camera` in `backend/app/models/camera.py`; owner-scoped `POST/GET/PATCH/DELETE /cameras` in `backend/app/routers/cameras.py`; validation in `backend/app/schemas/camera.py`; tests in `backend/tests/test_cameras_api.py` |
-| US-4.3 | As a user, I want a dashboard grid of all my cameras.                  | Done — `/cameras`, `CamerasDashboard` + `CameraCard` in `frontend/components/`; `listCameras` in `frontend/lib/cameras-api.ts` |
-| US-4.4 | As a user, I want to edit an existing camera.                          | Done — `/cameras/[id]/edit`, `getCamera` / `updateCamera` in `frontend/lib/cameras-api.ts`; `CameraForm` prefill via `initialValues`; Edit link on `CameraCard` |
-| US-4.5 | As a user, I want to delete a camera and remove it from the dashboard. | Done — `deleteCamera` in `frontend/lib/cameras-api.ts`; inline confirm on `CameraCard`; dashboard removes card and updates count on success |
-| US-4.6 | As a user, I want an Online/Offline status indicator per camera.       | Done — TCP reachability probe in `backend/app/services/camera_probe.py`; `status` on `CameraPublic`; badge on `CameraCard`; documented in `backend/README.md` |
-| US-4.7 | As a user, I want pagination when I have more than 10 cameras.         | Done — `CamerasDashboard` Previous/Next controls and page summary; uses API `page` / `pages`; reloads or steps back after delete on last item of a page |
+| US-4.1 | As a user, I want a UI form to add a new camera (Name, IP/URL, Location). | Done — `/cameras/new`, `CameraForm` in `frontend/components/camera-form.tsx`, `createCamera` in `frontend/lib/cameras-api.ts`; JWT via `authFetch`; `RequireAuth` redirects guests to `/login` |
+| US-4.2 | As the backend, I need to validate camera name, IP/URL, and location before saving. | Done — validation in `backend/app/schemas/camera.py` |
+| US-4.3 | As the backend, I need owner-scoped camera CRUD endpoints backed by PostgreSQL. | Done — `Camera` in `backend/app/models/camera.py`; `POST/GET/PATCH/DELETE /cameras` in `backend/app/routers/cameras.py`; tests in `backend/tests/test_cameras_api.py` |
+| US-4.4 | As a user, I want to view a dashboard grid of all my registered cameras. | Done — `/cameras`, `CamerasDashboard` + `CameraCard` in `frontend/components/`; `listCameras` in `frontend/lib/cameras-api.ts` |
+| US-4.5 | As a user, I want to edit the details of an existing camera.          | Done — `/cameras/[id]/edit`, `getCamera` / `updateCamera` in `frontend/lib/cameras-api.ts`; `CameraForm` prefill via `initialValues`; Edit link on `CameraCard` |
+| US-4.6 | As a user, I want to delete a camera and remove it from my dashboard. | Done — `deleteCamera` in `frontend/lib/cameras-api.ts`; inline confirm on `CameraCard`; dashboard removes card and updates count on success |
+| US-4.7 | As the backend, I need to probe camera reachability so Online/Offline status can be determined. | Done — TCP reachability probe in `backend/app/services/camera_probe.py`; `status` on `CameraPublic`; documented in `backend/README.md` |
+| US-4.8 | As a user, I want to see an Online/Offline status badge on each camera card. | Done — badge on `CameraCard` |
+| US-4.9 | As a user, I want pagination on my camera list when I have more than 10 cameras. | Done — `CamerasDashboard` Previous/Next controls and page summary; uses API `page` / `pages`; reloads or steps back after delete on last item of a page |
 
 
 **Exit criteria**: Full CRUD via API + UI; pagination and status indicators implemented per agreed rules (e.g., ping vs last-seen).
 
-**Progress note**: **US-4.1–US-4.7** complete on branch `epic4`. Epic 4 exit criteria met for CRUD API + UI, pagination, and online/offline indicators.
+**Progress note**: **US-4.1–US-4.9** complete on branch `epic4`. Epic 4 exit criteria met for CRUD API + UI, pagination, and online/offline indicators. Archive keeps a camera and its recordings. Restore returns that camera to the active list. Permanent deletion (`POST /cameras/{id}/permanent-delete`) removes only an archived camera that has no recordings and no verification history. The Archived Cameras page confirms with Cancel / Delete and sends the stored camera name. Cameras that still have saved data are rejected. No extra database migration is required for this behavior.
 
 ---
 
@@ -97,16 +104,18 @@ Keep the **Status** column in this table aligned with the repository as work lan
 **Goal**: Reliable local/simulated ingest, chunking, temp storage, and cleanup.
 
 
-| Type  | Item                                                                           |
-| ----- | ------------------------------------------------------------------------------ |
-| Task  | Python script to read a local `.mp4` and simulate a continuous CCTV-style feed |
-| Story | Backend uses FFmpeg to chunk the stream into **1-minute** `.mp4` segments      |
-| Story | Backend writes chunks to a local `temp/` directory                             |
-| Task  | Background worker cleans `temp/` after successful processing                   |
-| Story | System restarts FFmpeg gracefully if the simulated feed crashes                |
+| Story  | Description                                                                                              | Status |
+| ------ | -------------------------------------------------------------------------------------------------------- | ------ |
+| US-5.1 | As a developer, I want to simulate a continuous CCTV feed from a local `.mp4` so I can test the pipeline without real RTSP hardware. | Done — `backend/scripts/simulate_cctv_feed.py`, `backend/app/services/cctv_feed_simulator.py`; FFmpeg loops source to stdout (`-re -stream_loop -1`); see `backend/README.md` |
+| US-5.2 | As the backend, I need to use FFmpeg to chunk the video stream into exact 1-minute `.mp4` segments.      | Done — `backend/app/services/video_chunker.py`, `backend/scripts/chunk_cctv_feed.py`; FFmpeg segment muxer (`-segment_time 60`, `-segment_format mp4`); optional `--loop` for continuous ingest |
+| US-5.3 | As the backend, I need to save the 1-minute chunks to a local `temp/` directory.                        | Done — default `backend/temp/` (`CCTV_TEMP_DIR` override); `chunk_%03d.mp4` naming; gitignored |
+| US-5.4 | As the system, I need to delete processed temp chunks so local disk does not fill up.                     | Done — `backend/app/services/chunk_processing_worker.py`, `temp_chunk_cleanup.py`; `--cleanup-after-success` on chunk CLI; `scripts/process_temp_chunks.py`; stub processor until Epic 6 |
+| US-5.5 | As the system, I need to gracefully restart the FFmpeg process if the simulated camera feed crashes.     | Done — `backend/app/services/ffmpeg_supervisor.py`; auto-restart on non-zero exit for feed simulator and `--loop` chunker; `CCTV_FFMPEG_RESTART_DELAY_SECONDS`, optional `CCTV_FFMPEG_MAX_RESTARTS` |
 
 
 **Exit criteria**: Deterministic chunk duration; disk does not grow unbounded; recovery from process failure documented or automated.
+
+**Progress note**: Epic 5 **exit criteria met** on branch `epic5` — simulated feed, 1-minute chunking, `temp/` output, cleanup worker, and FFmpeg crash restart for continuous modes. Camera ingest uses the same segment muxer with wall-clock timestamps, UTC `strftime` filenames, a per-run segment CSV, and graceful FFmpeg shutdown. `segment_timeline.py` rebuilds each segment’s UTC start and end from that CSV, the filename stamp, and the container start time. An MP4 that is still missing `moov` while recording is retried; on the final pass that incomplete file is an integrity failure and is not marked permanently invalid.
 
 ---
 
@@ -115,19 +124,24 @@ Keep the **Status** column in this table aligned with the repository as work lan
 **Goal**: Pin IPFS CIDs and anchor metadata on Polygon Amoy; persist full provenance in PostgreSQL.
 
 
-| Type  | Item                                                                                            |
-| ----- | ----------------------------------------------------------------------------------------------- |
-| Task  | Integrate Pinata IPFS SDK in FastAPI                                                            |
-| Story | Backend uploads each 1-minute chunk to IPFS and retrieves the CID                               |
-| Story | Backend implements retry logic for IPFS upload timeouts/failures                                |
-| Task  | Implement `Datachain.sol` (mapping camera/video metadata to anchored hashes)                    |
-| Task  | Hardhat deployment script; deploy to **Polygon Amoy** testnet                                   |
-| Story | Backend uses Web3.py to submit transactions anchoring the CID to the contract                   |
-| Story | Backend handles Web3 RPC timeouts and gas failures gracefully                                   |
-| Story | Backend saves Web2 metadata (CameraID, Timestamp) and Web3 metadata (CID, TxHash) to PostgreSQL |
+| Story   | Description                                                                                              |
+| ------- | -------------------------------------------------------------------------------------------------------- |
+| US-6.1  | As the backend, I need the Pinata IPFS SDK integrated so video chunks can be uploaded to decentralized storage. |
+| US-6.2  | As the backend, I need to upload each 1-minute video chunk to IPFS and retrieve the cryptographic CID.   |
+| US-6.3  | As the backend, I need retry logic when IPFS upload fails due to network timeout.                        |
+| US-6.4  | As the system, I need a smart contract that maps camera video records to anchored IPFS CIDs so integrity can be verified on-chain. |
+| US-6.5  | As a developer, I want a Hardhat deployment script for the Datachain contract.                           |
+| US-6.6  | As a developer, I want the contract deployed to Polygon Amoy testnet so the app can use a live address.  |
+| US-6.7  | As the backend, I need to use Web3.py to send a transaction anchoring the IPFS CID to the smart contract. |
+| US-6.8  | As the backend, I need to handle Web3.py RPC timeout errors gracefully.                                  |
+| US-6.9  | As the backend, I need to handle Web3.py gas failures gracefully.                                         |
+| US-6.10 | As the backend, I need to save a video record with CameraID, Timestamp, and CID after a successful IPFS upload. |
+| US-6.11 | As the backend, I need to update the video record with the TxHash after a successful on-chain anchor.     |
 
 
 **Exit criteria**: End-to-end path from chunk file → CID → tx → DB row; contract address and ABI versioned for frontend verification.
+
+**Progress note**: Ingest wires Pinata → `anchorSegment` → `video_records` (`ingest_segment_processor.py`) as of 2026-09-15. Segment windows now come from the FFmpeg timeline mapping (`resolve_segment_utc_window`) and the same instants are floored for the chain anchor. **US-6.6** live Amoy deploy is maintainer-run (proven). **CP-D.P1–P9** Implemented (P9 is a mocked CID → tx → DB integration test).
 
 ---
 
@@ -136,18 +150,24 @@ Keep the **Status** column in this table aligned with the repository as work lan
 **Goal**: Drive-like browsing, filtering, and IPFS playback.
 
 
-| Story  | Description                                                            |
-| ------ | ---------------------------------------------------------------------- |
-| US-7.1 | As a user, I want a “My Videos” page with a Google Drive–style layout. |
-| US-7.2 | As a user, I want to filter videos by **date range**.                  |
-| US-7.3 | As a user, I want to filter videos by **camera name**.                 |
-| US-7.4 | As a user, I want **pagination** so large libraries stay performant.   |
-| US-7.5 | As a user, I want **loading skeletons** while data loads.              |
-| US-7.6 | As a user, I want to open a **video player modal** from a card.        |
-| US-7.7 | As a user, I want playback streaming from an **IPFS gateway** via CID. |
+| Story   | Description                                                                                              |
+| ------- | -------------------------------------------------------------------------------------------------------- |
+| US-7.1  | As a user, I want a "My Videos" page with a Google Drive–style layout to browse my footage.              |
+| US-7.2  | As the backend, I need an API endpoint that lists my video records for the authenticated user.           |
+| US-7.3  | As the backend, I need an API endpoint that filters video records by date range.                         |
+| US-7.4  | As the backend, I need an API endpoint that filters video records by camera.                             |
+| US-7.5  | As the backend, I need paginated video record responses so large libraries stay performant.                |
+| US-7.6  | As a user, I want to filter my videos by a specific date range on the dashboard.                         |
+| US-7.7  | As a user, I want to filter my videos by a specific camera name on the dashboard.                        |
+| US-7.8  | As a user, I want pagination on the video dashboard so the browser does not crash loading hundreds of videos. |
+| US-7.9  | As a user, I want a loading skeleton UI while videos are being fetched from the database.                |
+| US-7.10 | As a user, I want to click a video card and have it open a video player modal.                           |
+| US-7.11 | As a user, I want the video player to play a saved recording. The browser plays the file returned by the authenticated playback API after server verification. |
 
 
-**Exit criteria**: Filters compose sensibly with pagination; player uses gateway URL pattern documented in env config.
+**Exit criteria**: Filters compose sensibly with pagination. Playback asks the authenticated API to verify each segment and plays only the returned file. The browser does not open a public IPFS gateway URL.
+
+**Progress note**: A global **My Videos** page (US-7.1) is deferred; footage stays camera-scoped on `/cameras/[id]`. E1 lists/filters/paginates that camera’s minutes (`GET /cameras/{id}/recordings`). With no date chosen, the page shows the **10 newest** clips and a day timeline. Watch builds one continuous sequence from the stored start and end times. Each segment, including the next one being preloaded, is verified on `GET /cameras/{id}/recordings/{record_id}/playback` before its bytes reach the player. A segment that is Tampered, Missing, Unavailable, or Failed is not played, and that interval stays visible. Download verifies the selected range on `GET /cameras/{id}/recordings/download` and saves only the verified portions.
 
 ---
 
@@ -158,14 +178,17 @@ Keep the **Status** column in this table aligned with the repository as work lan
 
 | Story  | Description                                                                                     |
 | ------ | ----------------------------------------------------------------------------------------------- |
-| US-8.1 | As a user, I want a **Verify Integrity** control per video.                                     |
-| US-8.2 | As the frontend, I need **ethers.js** to query the smart contract on verify.                    |
-| US-8.3 | As a user, I want a **green / 100% Verified** badge when chain CID matches DB/current file CID. |
-| US-8.4 | As a user, I want a **red / Tampered** badge when CIDs diverge.                                 |
-| US-8.5 | As a user, I want to click **TxHash** and open **Polygonscan** for the proof.                   |
+| US-8.1 | As a user, I want a "Verify Integrity" button next to every video in my dashboard.              |
+| US-8.2 | As the frontend, I need to connect to the deployed Polygon contract using ethers.js.            |
+| US-8.3 | As the frontend, I need to read the anchored CID from the smart contract for the selected video. |
+| US-8.4 | As a user, I want to see a visual green checkmark / 100% Verified badge when the blockchain CID matches the database CID. |
+| US-8.5 | As a user, I want to see a visual red warning / Tampered badge when the CIDs do not match.      |
+| US-8.6 | As a user, I want to click the transaction hash in the UI and be redirected to Polygonscan to view the blockchain ledger proof. |
 
 
 **Exit criteria**: Verification path documented (RPC provider, contract ABI, network ID); mismatches explained in UI without leaking secrets.
+
+**Progress note**: The camera page no longer has a manual Verify button, a browser `getSegment` read, or a verification-history list. Watch verifies each segment on the server before playback (PostgreSQL, `getSegment`, and the IPFS file hash) and plays only a verified file. A segment that is Tampered, Missing, Unavailable, or Failed is not played, and the player shows that result. Download uses the same server check and saves only verified portions. Nothing is saved when no segment is verified. Each playback or download verification also writes one `verification_attempts` row and per-segment minute rows. Older client-submitted rows remain. The camera page does not display that history. A global video dashboard Verify button (US-8.1) is not added.
 
 ---
 
@@ -174,15 +197,19 @@ Keep the **Status** column in this table aligned with the repository as work lan
 **Goal**: Automated confidence in contracts, API, and cross-layer pipeline.
 
 
-| Type | Item                                                                  |
-| ---- | --------------------------------------------------------------------- |
-| Task | Unit tests (Chai/Mocha) for Solidity: metadata storage correctness    |
-| Task | PyTest: registration and login API                                    |
-| Task | PyTest: Camera CRUD API                                               |
-| Task | Integration script/test: **IPFS upload → blockchain write → DB save** |
+| Story  | Description                                                                                              |
+| ------ | -------------------------------------------------------------------------------------------------------- |
+| US-9.1 | As a developer, I want automated contract tests so anchored metadata is stored correctly on-chain.       |
+| US-9.2 | As a developer, I want API tests for user registration so the register endpoint stays correct.         |
+| US-9.3 | As a developer, I want API tests for user login so the login endpoint stays correct.                     |
+| US-9.4 | As a developer, I want API tests for camera CRUD operations so camera management stays correct.          |
+| US-9.5 | As a developer, I want an integration test that verifies IPFS upload returns a CID for a chunk.          |
+| US-9.6 | As a developer, I want an integration test that verifies blockchain anchor and database save after upload. |
 
 
 **Exit criteria**: CI runs unit suites; integration test runnable locally with documented env (test keys, testnet faucet).
+
+**Progress note**: **US-9.5 / US-9.6** covered in mocked form by **CP-D.P9** (`backend/tests/test_ingest_ipfs_chain_db.py`): Pinata HTTP and the Web3 send path are faked; live testnet keys remain optional.
 
 ---
 
@@ -191,17 +218,46 @@ Keep the **Status** column in this table aligned with the repository as work lan
 **Goal**: Written and diagrammatic artifacts for coursework submission.
 
 
-| Type | Item                                                                                    |
-| ---- | --------------------------------------------------------------------------------------- |
-| Task | Literature review: traditional IoT vulnerabilities vs. blockchain immutability          |
-| Task | Methodology & architecture: hybrid Web2/Web3 data flow                                  |
-| Task | UML use case diagrams (user and system personas)                                        |
-| Task | UML class diagrams (PostgreSQL models and contract structs)                             |
-| Task | UML sequence diagram: cryptographic verification flow                                   |
-| Task | Risk management document (e.g., private key loss, RPC failure, operational mitigations) |
+| Story   | Description                                                                                              |
+| ------- | -------------------------------------------------------------------------------------------------------- |
+| US-10.1 | As a project author, I want a literature review chapter on traditional IoT vulnerabilities vs. blockchain immutability so the project is grounded in research. |
+| US-10.2 | As a project author, I want a methodology chapter describing how the system was built and evaluated.   |
+| US-10.3 | As a project author, I want an architecture chapter explaining the hybrid Web2/Web3 data flow.         |
+| US-10.4 | As a project author, I want UML use case diagrams for user and system personas so stakeholders can see who interacts with the platform. |
+| US-10.5 | As a project author, I want UML class diagrams mapping PostgreSQL models and smart contract structs so the data model is documented. |
+| US-10.6 | As a project author, I want a UML sequence diagram showing the step-by-step cryptographic verification process so the integrity flow is clear. |
+| US-10.7 | As a project author, I want a risk management document identifying risks such as private key loss and RPC node failure so mitigations are explicit. |
 
 
 ---
+
+## Epic 11: Client / Programmer Requirements Audit & Delivery
+
+**Goal**: Treat the teacher-facing client–programmer stories as the working checklist: trace each requirement against the repo, then implement gaps in order.
+
+**Source of truth (stories):** [`docs/CLIENT_PROGRAMMER_USER_STORIES.md`](docs/CLIENT_PROGRAMMER_USER_STORIES.md) (organized rewrite of the `US.docx` draft).
+
+Epics **1–10** above remain historical delivery notes for the original roadmap. Progress for the new format is tracked by story IDs (`CP-A.*` … `CP-E.*`) and Status columns in that document.
+
+
+| Slice | Focus | Status |
+| ----- | ----- | ------ |
+| A | Register and Login | Done — all CP-A stories Implemented (see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`) |
+| B | Camera dashboard management | Done — all CP-B stories Implemented (search/filter/sort, soft delete, unique names, detail page) |
+| C | Video processing pipeline | Done — CP-C.P1–P8 and CP-C.C1 Implemented |
+| D | IPFS storage and blockchain anchoring | Done — CP-D.P1–P9 Implemented; CP-D.C1 Implemented (experienced when Watch or Download verifies each segment on the server) |
+| E | Video management and verification | Done — E1–E6 (search, Watch, verify full/part, download as one file, verification audit trail); CP-E.P11 Deferred |
+
+
+**Exit criteria**: Every story in `docs/CLIENT_PROGRAMMER_USER_STORIES.md` is Implemented, Deferred (with reason), or explicitly Declined; open decisions in that file are resolved.
+
+**Progress note**: Slice A complete 2026-07-21 (including landing refinement: toolbar-free home, problem/solution, signed-in → `/cameras`). Slice B complete 2026-07-21 — apply Alembic revision `20260721_000002` for `deleted_at` + unique active name. Slice C complete 2026-09-09 — **CP-C.P1–P8** (simulate feed, receive stream, 1-minute chunks, camera+time filenames, pre-stage integrity check, stage under `temp/` until processing succeeds, delete temp files only after processing success, capped FFmpeg restart + ingest offline) and **CP-C.C1** (`offline_reason` `ingest_failed` vs `unreachable`; `ingest_offline_at` on the API so the card/detail can say **since** capture stopped); apply Alembic `20260824_000003` for `ingest_offline_at`; see `docs/CLIENT_PROGRAMMER_USER_STORIES.md`. Slice D started 2026-09-14; ingest Pinata + chain + DB wired 2026-09-15 (`ingest_segment_processor.py`). **CP-D.P1–P9** Implemented as of 2026-09-17; **CP-D.C1** is experienced when Watch or Download verifies each segment on the server. The manual Verify button and verification-history list have been removed from the camera page. Slice E: E1 recordings search, including the 10 newest clips and a day timeline; E2 continuous Watch after per-segment backend verification; E5 download of verified portions as one MP4. The earlier browser Verify flow (E3/E4) and the on-page verification-history list (E6) have been removed. The attempt API and Alembic revision `20260917_000005` remain. Download verifies overlapping segments with `verify_recording_range` and assembles only verified files (2026-11-16). A partial result is discontinuous: the file is the verified portions in order, and the report lists gaps and excluded segments. **CP-E.P11** remains Deferred. Backend archive and restore (2026-11-18) reuses `deleted_at`: owner archive/restore routes, an archived list, owner playback and download, and a fail-closed ingest stop. The Cameras UI still says Delete; no development camera rows were restored in that slice. Automatic recording (2026-11-18) is a separate `scripts/ingest_camera.py --supervise` process: it discovers active and restored cameras, stops archived ones, retries an unreachable RTSP source with backoff, and holds a PostgreSQL advisory lock per camera. The API does not start it. Run it with `cd backend` and `.venv/bin/python scripts/ingest_camera.py --supervise`. Online/Offline on the dashboard is stream reachability, not proof that a segment is being recorded.
+
+---
+
+## Future work
+
+Permanent deletion of cameras containing historical recordings, including safe removal of database records, IPFS pin management, shared-CID protection, and failure recovery.
 
 ## Suggested milestone grouping
 
@@ -214,6 +270,7 @@ Keep the **Status** column in this table aligned with the repository as work lan
 | **M4 — User value**    | 7–8   | Dashboard + verification                  |
 | **M5 — Hardening**     | 9     | Tests and integration                     |
 | **M6 — Academic**      | 10    | Book chapters and diagrams                |
+| **M7 — CP requirements** | 11  | Client/programmer audit + gap delivery  |
 
 
 ---
@@ -224,5 +281,6 @@ Keep the **Status** column in this table aligned with the repository as work lan
 - Epic **6** depends on **5** (stable chunks) and **2** (VideoRecord storage).
 - Epic **4** depends on **3** (authenticated user context).
 - **Integration testing (Epic 9)** should follow a minimal vertical slice through **5–6**.
+- **Epic 11** depends on the story text in `docs/CLIENT_PROGRAMMER_USER_STORIES.md`; implement slices **A → E** in order unless a dependency forces a later slice first (e.g. Slice E needs D).
 
 This file should stay aligned with `AGENTS.md` and the repository README as the implementation evolves.

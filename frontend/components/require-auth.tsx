@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 
+import { ui } from "@/lib/ui";
+
 import { useAuth } from "./auth-provider";
 
 export function RequireAuth({ children }: { children: ReactNode }) {
@@ -16,7 +18,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   }, [isLoading, user, router]);
 
   if (isLoading) {
-    return <p className="text-slate-400">Loading…</p>;
+    return <p className={ui.muted}>Loading…</p>;
   }
 
   if (!user) {

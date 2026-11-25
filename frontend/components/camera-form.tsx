@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 
 import type { CameraCreatePayload } from "@/lib/cameras-api";
+import { ui } from "@/lib/ui";
 
 export type CameraFormInitialValues = {
   name: string;
@@ -42,13 +43,10 @@ export function CameraForm({
     }
   }
 
-  const inputClass =
-    "w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-slate-100 outline-none ring-emerald-500/50 focus:ring-2";
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="space-y-1">
-        <label htmlFor="camera-name" className="block text-sm text-slate-300">
+    <form onSubmit={handleSubmit} className={`space-y-4 ${ui.panel}`}>
+      <div className="space-y-1.5">
+        <label htmlFor="camera-name" className={ui.label}>
           Name
         </label>
         <input
@@ -58,15 +56,12 @@ export function CameraForm({
           required
           value={name}
           onChange={(e) => setName(e.target.value)}
-          className={inputClass}
+          className={ui.input}
         />
       </div>
-      <div className="space-y-1">
-        <label
-          htmlFor="camera-stream-url"
-          className="block text-sm text-slate-300"
-        >
-          IP / stream URL
+      <div className="space-y-1.5">
+        <label htmlFor="camera-stream-url" className={ui.label}>
+          Stream URL
         </label>
         <input
           id="camera-stream-url"
@@ -75,15 +70,12 @@ export function CameraForm({
           required
           value={streamUrl}
           onChange={(e) => setStreamUrl(e.target.value)}
-          className={inputClass}
+          className={ui.input}
         />
-        <p className="text-xs text-slate-500">http://, https://, or rtsp://</p>
+        <p className={ui.hint}>http://, https://, or rtsp://</p>
       </div>
-      <div className="space-y-1">
-        <label
-          htmlFor="camera-location"
-          className="block text-sm text-slate-300"
-        >
+      <div className="space-y-1.5">
+        <label htmlFor="camera-location" className={ui.label}>
           Location (optional)
         </label>
         <input
@@ -92,45 +84,19 @@ export function CameraForm({
           type="text"
           value={location}
           onChange={(e) => setLocation(e.target.value)}
-          className={inputClass}
+          className={ui.input}
         />
       </div>
-      <FormActions
-        submitLabel={submitLabel}
-        submitting={submitting}
-        onCancel={onCancel}
-      />
-    </form>
-  );
-}
-
-function FormActions({
-  submitLabel,
-  submitting,
-  onCancel,
-}: {
-  submitLabel: string;
-  submitting: boolean;
-  onCancel?: () => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-3">
-      <button
-        type="submit"
-        disabled={submitting}
-        className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-60"
-      >
-        {submitting ? "Saving…" : submitLabel}
-      </button>
-      {onCancel ? (
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-md border border-slate-600 px-4 py-2 text-sm text-slate-300 hover:border-slate-500"
-        >
-          Cancel
+      <div className="flex flex-wrap gap-3 pt-1">
+        <button type="submit" disabled={submitting} className={ui.btnPrimary}>
+          {submitting ? "Saving…" : submitLabel}
         </button>
-      ) : null}
-    </div>
+        {onCancel ? (
+          <button type="button" onClick={onCancel} className={ui.btnSecondary}>
+            Cancel
+          </button>
+        ) : null}
+      </div>
+    </form>
   );
 }

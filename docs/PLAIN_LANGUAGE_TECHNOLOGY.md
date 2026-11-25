@@ -150,7 +150,7 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **What it is:** **TypeScript** is **JavaScript** with **static types**: the editor and compiler catch many mistakes (wrong property names, missing fields) before runtime.
 
-**Why Datachain uses it:** As the UI grows, types reduce bugs in API shapes, props, and on-chain verification glue (**ethers.js** later).
+**Why Datachain uses it:** As the UI grows, types reduce bugs in API shapes and component props. The website does not talk to the blockchain; the backend verifies recordings.
 
 **Where it shows up:** `frontend/**/*.tsx`, `frontend/tsconfig.json`; Hardhat config and tests under `contracts/` (`hardhat.config.ts`, `test/`).
 
@@ -182,15 +182,15 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **What it is:** **Hardhat** is a **development environment** for Ethereum-style smart contracts: it runs a local simulation for tests, compiles **Solidity**, and loads plugins for verification, deployment (**Hardhat Ignition**), and network helpers. This repository uses **Hardhat 3** with the recommended **Viem**-based toolbox.
 
-**Why Datachain uses it:** We need a **standard, repeatable** way to compile `Datachain.sol`, run automated tests, and later add deploy scripts (Polygon testnet per `ROADMAP.md`) without hand-wiring compilers and test runners.
+**Why Datachain uses it:** We need a **standard, repeatable** way to compile `Datachain.sol`, run automated tests, and deploy to **Polygon Amoy** (`scripts/deploy.ts`) without hand-wiring compilers.
 
-**Where it shows up:** `contracts/package.json`, `contracts/hardhat.config.ts`, `contracts/test/`; maintainer notes in `contracts/README.md`.
+**Where it shows up:** `contracts/package.json`, `contracts/hardhat.config.ts`, `contracts/scripts/deploy.ts`, `contracts/test/`; maintainer notes in `contracts/README.md`.
 
 ### Viem (in `contracts/` tests and scripts)
 
 **What it is:** **Viem** is a **TypeScript library** for talking to Ethereum-compatible networks: reading state, sending transactions, and working with contract ABIs in a type-safe way.
 
-**Why Datachain uses it:** Hardhat 3’s default toolbox uses Viem (instead of **ethers.js**) for **compile-time** test and script code in `contracts/`. The **Next.js** app can still use **ethers.js** later for wallet and browser verification, as in `ROADMAP.md`—the two libraries serve different layers of the stack.
+**Why Datachain uses it:** Hardhat 3’s default toolbox uses Viem for **compile-time** test and script code in `contracts/`. The website does not use a browser blockchain library. Recording checks run in the backend.
 
 **Where it shows up:** `contracts/` (via `@nomicfoundation/hardhat-toolbox-viem`); not required in `frontend/` unless you choose to adopt it there.
 
@@ -200,7 +200,15 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Why Datachain uses it:** On-chain storage is for **anchors and metadata pointers** (for example CIDs), not raw video; Solidity expresses those rules and lets anyone verify what was committed on-chain.
 
-**Where it shows up:** `contracts/contracts/Datachain.sol` (Epic 1 scaffold; logic expands in later epics).
+**Where it shows up:** `contracts/contracts/Datachain.sol` — stores each minute’s **CID**, **segment hash**, and **start/end times**, keyed by camera id and start time. Tests in `contracts/test/Datachain.ts`. Deploy path: `contracts/scripts/deploy.ts` (Polygon Amoy). Backend wiring is a later slice.
+
+### Polygon Amoy (testnet)
+
+**What it is:** **Polygon** is an Ethereum-compatible blockchain that is cheaper to use than Ethereum mainnet. **Amoy** is Polygon’s current **test network** (chain id 80002): fake POL, no real money, used to try contracts before any mainnet deploy.
+
+**Why Datachain uses it:** Anchoring a CID on-chain should be practiced on a testnet first. Amoy is what the roadmap names for this project; mainnet is out of scope unless explicitly approved.
+
+**Where it shows up:** `contracts/hardhat.config.ts` network `polygonAmoy`; `npm run deploy:amoy`. A live Amoy address exists only after someone runs that command with a funded testnet key.
 
 ### npm audit (contracts)
 
@@ -210,6 +218,62 @@ Readable explanations of what we use and why—suitable for non-specialists and 
 
 **Where it shows up:** Run from `contracts/`; see `contracts/README.md`.
 
+### FFmpeg
+
+**What it is:** **FFmpeg** is a widely used **command-line toolkit** for working with video and audio. It can read files, change format, split streams into timed segments, and stream output to files or pipes.
+
+**Why Datachain uses it:** CCTV ingest needs **fixed-duration chunks** (about one minute) for IPFS uploads and chain anchors. FFmpeg is the standard way to turn a continuous feed (real RTSP or a **looped sample MP4**) into those segments without storing one giant file in the API process.
+
+**Where it shows up:** Epic 5 starts with `backend/scripts/simulate_cctv_feed.py` and `backend/app/services/cctv_feed_simulator.py` (loop a local `.mp4` at real-time pace to stdout). **Slice C / CP-C.P2–P8** receive each registered camera URL via `backend/scripts/ingest_camera.py` and write **1-minute** `.mp4` files under `backend/temp/<camera-id>/` using `backend/app/services/video_chunker.py`. Automatic recording is a separate supervisor process, not part of the API: from `backend/`, `.venv/bin/python scripts/ingest_camera.py --supervise`. It notices new active cameras and cameras restored under the same id, starts FFmpeg when the RTSP source accepts a connection, retries when it does not, and stops a camera when it is archived. The dashboard Online/Offline badge is reachability, not proof that a minute is being recorded. Closed segments are checked with **ffprobe** (a companion tool in the FFmpeg install) plus a SHA-256 fingerprint in `backend/app/services/segment_integrity.py` before later stages, and stay staged in `temp/` until processing succeeds (`backend/app/services/segment_staging.py`). If FFmpeg stops unexpectedly, `backend/app/services/ffmpeg_supervisor.py` restarts it (capped for camera ingest) and ingest can mark the camera offline. **`backend/scripts/chunk_cctv_feed.py`** can still chunk a local file the same way. **Slice E / CP-E.P10** uses FFmpeg again to **join verified segments** into one download file (`backend/app/services/recording_download.py`). Unverified files are left out. Install FFmpeg on the host; see `backend/README.md`.
+
+### SHA-256 (segment fingerprint)
+
+**What it is:** **SHA-256** is a **cryptographic hash**: a short fingerprint of a file’s bytes. Changing even one bit produces a different fingerprint.
+
+**Why Datachain uses it:** Before a one-minute clip is uploaded or anchored, the pipeline records a SHA-256 so later stages (and verification) can tell if that file was altered.
+
+**Where it shows up:** `backend/app/services/segment_integrity.py` (Slice C / CP-C.P5). Storing that hash in PostgreSQL and on-chain is Slice D.
+
+### Simulated CCTV feed (development)
+
+**What it is:** For local development, a **simulated feed** replays one **`.mp4` file in a loop** at real-time speed instead of connecting to a physical camera or RTSP URL. That lets you test the pipeline without hardware.
+
+**Why Datachain uses it:** Slice C needs a **repeatable** input before live camera ingest. Looping a sample clip exercises FFmpeg, chunking, and later upload/anchor steps the same way every run.
+
+**Where it shows up:** `CCTV_SOURCE_MP4` in `backend/.env.example`; CLI `python scripts/simulate_cctv_feed.py` from `backend/`.
+
+### Temp chunk cleanup worker
+
+**What it is:** A **background worker** watches the **`temp/`** folder for new video chunk files. When processing succeeds (upload and database write in production), it **deletes that file** so old segments do not fill the disk.
+
+**Why Datachain uses it:** Chunks are **temporary staging** until IPFS and the chain record exist. Automatic cleanup keeps laptops and servers healthy during long-running CCTV ingest. Camera ingest (Slice C) keeps staged files in `temp/` until processing succeeds, then deletes them; failed files stay for retry. The Epic 5 file-chunk path still deletes on stub success.
+
+**Where it shows up:** `backend/app/services/chunk_processing_worker.py`, `backend/app/services/temp_chunk_cleanup.py` (`delete_after_successful_processing`), `backend/app/services/segment_staging.py` (ingest keep-until-success), `--cleanup-after-success` on `chunk_cctv_feed.py`, and `scripts/process_temp_chunks.py`. After a segment passes the integrity check, `ingest_segment_processor.py` uploads it through `pinata_ipfs.py`.
+
+### Pinata (IPFS pinning)
+
+**What it is:** **IPFS** (InterPlanetary File System) stores files by a cryptographic fingerprint called a **CID** (content identifier). **Pinata** is a hosted service that **pins** (keeps available) those files so a laptop or server does not have to run an IPFS node. There is no official Pinata Python SDK; Datachain calls Pinata’s **pinFileToIPFS** HTTP API with a secret **JWT**.
+
+**Why Datachain uses it:** One-minute CCTV clips stay **off-chain**. The CID uniquely identifies the bytes; later the same CID is stored in PostgreSQL and on Polygon so verification can detect a swapped file.
+
+**Where it shows up:** `backend/app/services/pinata_ipfs.py`, `backend/scripts/upload_segment_ipfs.py`, ingest via `ingest_segment_processor.py`, `PINATA_JWT` in `backend/.env.example`. Watch and download ask the API to verify overlapping segments and then serve only files that matched (`GET /cameras/{id}/recordings/{record_id}/playback`, `GET /cameras/{id}/recordings/download`). The API retrieves those files through the public gateway (`IPFS_GATEWAY` in `backend/.env.example`). Permanent deletion of an empty archived camera does not unpin IPFS content. Removing pins for cameras that have recordings is future work.
+
+### Web3.py (Polygon anchoring)
+
+**What it is:** **Web3.py** is a Python library for talking to Ethereum-compatible blockchains (send transactions, read contracts). Datachain uses it to call `anchorSegment` and `getSegment` on Polygon **Amoy**.
+
+**Why Datachain uses it:** The backend must record each minute’s CID and hash on-chain. If the RPC times out or gas is too low, the write helper **retries** and **does not treat the segment as proven**; the temp file can stay for another attempt. A separate **read** helper can load the same metadata from the contract **without PostgreSQL**.
+
+**Where it shows up:** `backend/app/services/chain_anchor.py` (`anchor_segment`, `get_segment`), `backend/scripts/anchor_segment.py`, ingest via `ingest_segment_processor.py`, ABI in `backend/app/contracts/datachain_abi.py`. Watch and Download call this read helper before serving a file (`recording_verification.py`). The website does not read the contract itself.
+
+### Development mocks for IPFS and blockchain (later slices)
+
+**What it is:** A **mock** (fake stand-in) lets the backend **pretend** an external service succeeded—returning a made-up **CID** or **transaction hash**—so the rest of the pipeline can be exercised without Pinata or Polygon keys.
+
+**Why Datachain uses it:** Local and college environments can stay secret-free. Unit tests already **mock HTTP** for Pinata; a `MOCK_IPFS` runtime flag is still later.
+
+**Where it shows up:** `backend/tests/test_pinata_ipfs.py`, `backend/tests/test_chain_anchor.py`, mocked pipeline in `backend/tests/test_ingest_ipfs_chain_db.py`. Runtime mocks are **not** in the repo yet.
+
 ### Technologies on the roadmap but not fully in the repo yet
 
-The product vision also relies on **IPFS/Pinata** (video storage), **Polygon** (testnet anchoring and live RPC), **ethers.js** (browser verification), **SQLAlchemy/Alembic** (database layer in code), and **FFmpeg** (video chunking). These will receive plain-language entries in **this document** when they are implemented in the repository, per **Plain-language technology notes** in `**AGENTS.md`**.
+The product vision still has **CP-E.P11** deferred (rebuild DB references from chain/IPFS). Ingest can use a maintainer-deployed Amoy contract address.

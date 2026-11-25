@@ -47,8 +47,22 @@ contracts/typechain-types/
 contracts/coverage/
 contracts/coverage.json
 
+# Epic 5 video pipeline temp chunks (created by future chunking worker)
+backend/temp/
+
+# Leftover segments moved out of the ingest scan directory
+backend/quarantine/
+
 # Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Local ingest experiments, generated media, and database dumps
+backend/temp-*/
+backend/ffmpeg_test/
+backend/ffmpeg_live_test/
+backend/backups/
+backend/*.mp4
+*.dump

@@ -1,0 +1,499 @@
+﻿Issue Type,Summary,Description,Epic Name,Status,Labels,Priority
+Epic,Epic 1: Environment & DevOps Setup,"Goal: Runnable monorepo with consistent tooling and CI.
+
+Milestone: M1 - Foundation",,To Do,datachain,Medium
+Epic,Epic 2: Database Schema & Models,"Goal: Persistent relational model for users, cameras, and video records with migrations.
+
+Milestone: M1 - Foundation",,To Do,datachain,Medium
+Epic,Epic 3: Authentication & Authorization,"Goal: Secure account lifecycle and API access with JWT.
+
+Milestone: M2 - Product shell",,To Do,datachain,Medium
+Epic,Epic 4: Camera Management (CRUD),"Goal: Users manage IP cameras tied to their account with scalable listing.
+
+Milestone: M2 - Product shell",,To Do,datachain,Medium
+Epic,Epic 5: Video Processing Pipeline,"Goal: Reliable local/simulated ingest, chunking, temp storage, and cleanup.
+
+Milestone: M3 - Pipeline",,To Do,datachain,Medium
+Epic,Epic 6: Web3 & Decentralized Storage,"Goal: Pin IPFS CIDs and anchor metadata on Polygon Amoy; persist full provenance in PostgreSQL.
+
+Milestone: M3 - Pipeline",,To Do,datachain,Medium
+Epic,Epic 7: Video Dashboard & Retrieval,"Goal: Drive-like browsing, filtering, and IPFS playback.
+
+Milestone: M4 - User value",,To Do,datachain,Medium
+Epic,Epic 8: Cryptographic Verification (Core Feature),"Goal: Explicit integrity UX: on-chain truth vs retrieved CID.
+
+Milestone: M4 - User value",,To Do,datachain,Medium
+Epic,Epic 9: Testing & Quality Assurance,"Goal: Automated confidence in contracts, API, and cross-layer pipeline.
+
+Milestone: M5 - Hardening",,To Do,datachain,Medium
+Epic,Epic 10: Academic Deliverables (Project Book),"Goal: Written and diagrammatic artifacts for coursework submission.
+
+Milestone: M6 - Academic",,To Do,datachain,Medium
+Story,"US-1.1 As a developer, I want a monorepo with `frontend`, `backend`, and `contracts` packages so the team can work in one repository.","As a developer, I want a monorepo with `frontend`, `backend`, and `contracts` packages so the team can work in one repository.
+
+Roadmap ID: US-1.1
+Epic: Epic 1: Environment & DevOps Setup
+Milestone: M1 - Foundation
+Repository status: Done",Epic 1: Environment & DevOps Setup,Done,datachain;M1Foundation,Medium
+Story,"US-1.2 As a developer, I want a Next.js application scaffold so I can build the frontend.","As a developer, I want a Next.js application scaffold so I can build the frontend.
+
+Roadmap ID: US-1.2
+Epic: Epic 1: Environment & DevOps Setup
+Milestone: M1 - Foundation
+Repository status: Done",Epic 1: Environment & DevOps Setup,Done,datachain;M1Foundation,Medium
+Story,"US-1.3 As a developer, I want Tailwind CSS configured in the frontend so UI styling is consistent.","As a developer, I want Tailwind CSS configured in the frontend so UI styling is consistent.
+
+Roadmap ID: US-1.3
+Epic: Epic 1: Environment & DevOps Setup
+Milestone: M1 - Foundation
+Repository status: Done",Epic 1: Environment & DevOps Setup,Done,datachain;M1Foundation,Medium
+Story,"US-1.4 As a developer, I want App Router pages and navigation so users can move between screens.","As a developer, I want App Router pages and navigation so users can move between screens.
+
+Roadmap ID: US-1.4
+Epic: Epic 1: Environment & DevOps Setup
+Milestone: M1 - Foundation
+Repository status: Done",Epic 1: Environment & DevOps Setup,Done,datachain;M1Foundation,Medium
+Story,"US-1.5 As a developer, I want a FastAPI backend with a documented virtual environment so I can build the API.","As a developer, I want a FastAPI backend with a documented virtual environment so I can build the API.
+
+Roadmap ID: US-1.5
+Epic: Epic 1: Environment & DevOps Setup
+Milestone: M1 - Foundation
+Repository status: Done",Epic 1: Environment & DevOps Setup,Done,datachain;M1Foundation,Medium
+Story,"US-1.6 As a developer, I want PostgreSQL available via Docker Compose so I can run the database locally without manual setup.","As a developer, I want PostgreSQL available via Docker Compose so I can run the database locally without manual setup.
+
+Roadmap ID: US-1.6
+Epic: Epic 1: Environment & DevOps Setup
+Milestone: M1 - Foundation
+Repository status: Done",Epic 1: Environment & DevOps Setup,Done,datachain;M1Foundation,Medium
+Story,"US-1.7 As a developer, I want a Hardhat environment for Solidity smart contracts so I can compile and test on-chain logic.","As a developer, I want a Hardhat environment for Solidity smart contracts so I can compile and test on-chain logic.
+
+Roadmap ID: US-1.7
+Epic: Epic 1: Environment & DevOps Setup
+Milestone: M1 - Foundation
+Repository status: Done",Epic 1: Environment & DevOps Setup,Done,datachain;M1Foundation,Medium
+Story,"US-1.8 As a developer, I want ESLint and Prettier configured for the frontend so code style stays consistent.","As a developer, I want ESLint and Prettier configured for the frontend so code style stays consistent.
+
+Roadmap ID: US-1.8
+Epic: Epic 1: Environment & DevOps Setup
+Milestone: M1 - Foundation
+Repository status: Done",Epic 1: Environment & DevOps Setup,Done,datachain;M1Foundation,Medium
+Story,"US-1.9 As a developer, I want Black and Flake8 configured for the backend so Python formatting stays consistent.","As a developer, I want Black and Flake8 configured for the backend so Python formatting stays consistent.
+
+Roadmap ID: US-1.9
+Epic: Epic 1: Environment & DevOps Setup
+Milestone: M1 - Foundation
+Repository status: Done",Epic 1: Environment & DevOps Setup,Done,datachain;M1Foundation,Medium
+Story,"US-1.10 As a developer, I want a GitHub Actions workflow that runs lint and tests on pull requests so regressions are caught early.","As a developer, I want a GitHub Actions workflow that runs lint and tests on pull requests so regressions are caught early.
+
+Roadmap ID: US-1.10
+Epic: Epic 1: Environment & DevOps Setup
+Milestone: M1 - Foundation
+Repository status: Done",Epic 1: Environment & DevOps Setup,Done,datachain;M1Foundation,Medium
+Story,"US-2.1 As the system, I need to persist user accounts in PostgreSQL so authentication can reference them.","As the system, I need to persist user accounts in PostgreSQL so authentication can reference them.
+
+Roadmap ID: US-2.1
+Epic: Epic 2: Database Schema & Models
+Milestone: M1 - Foundation
+Repository status: Done",Epic 2: Database Schema & Models,Done,datachain;M1Foundation,Medium
+Story,"US-2.2 As the system, I need to store cameras linked to users so each owner sees only their devices.","As the system, I need to store cameras linked to users so each owner sees only their devices.
+
+Roadmap ID: US-2.2
+Epic: Epic 2: Database Schema & Models
+Milestone: M1 - Foundation
+Repository status: Done",Epic 2: Database Schema & Models,Done,datachain;M1Foundation,Medium
+Story,"US-2.3 As the system, I need each video record linked to a camera with segment start and end timestamps.","As the system, I need each video record linked to a camera with segment start and end timestamps.
+
+Roadmap ID: US-2.3
+Epic: Epic 2: Database Schema & Models
+Milestone: M1 - Foundation
+Repository status: Done",Epic 2: Database Schema & Models,Done,datachain;M1Foundation,Medium
+Story,"US-2.4 As the system, I need each video record to store an IPFS CID and blockchain transaction hash.","As the system, I need each video record to store an IPFS CID and blockchain transaction hash.
+
+Roadmap ID: US-2.4
+Epic: Epic 2: Database Schema & Models
+Milestone: M1 - Foundation
+Repository status: Done",Epic 2: Database Schema & Models,Done,datachain;M1Foundation,Medium
+Story,"US-2.5 As a developer, I want Alembic migrations so database schema changes are versioned and reproducible.","As a developer, I want Alembic migrations so database schema changes are versioned and reproducible.
+
+Roadmap ID: US-2.5
+Epic: Epic 2: Database Schema & Models
+Milestone: M1 - Foundation
+Repository status: Done",Epic 2: Database Schema & Models,Done,datachain;M1Foundation,Medium
+Story,"US-3.1 As a user, I want to register an account with email and password.","As a user, I want to register an account with email and password.
+
+Roadmap ID: US-3.1
+Epic: Epic 3: Authentication & Authorization
+Milestone: M2 - Product shell
+Repository status: Done",Epic 3: Authentication & Authorization,Done,datachain;M2Productshell,Medium
+Story,"US-3.2 As the system, I need to hash user passwords with bcrypt before saving.","As the system, I need to hash user passwords with bcrypt before saving.
+
+Roadmap ID: US-3.2
+Epic: Epic 3: Authentication & Authorization
+Milestone: M2 - Product shell
+Repository status: Done",Epic 3: Authentication & Authorization,Done,datachain;M2Productshell,Medium
+Story,"US-3.3 As a user, I want to log in and receive a secure JWT.","As a user, I want to log in and receive a secure JWT.
+
+Roadmap ID: US-3.3
+Epic: Epic 3: Authentication & Authorization
+Milestone: M2 - Product shell
+Repository status: Done",Epic 3: Authentication & Authorization,Done,datachain;M2Productshell,Medium
+Story,"US-3.4 As a user, I want a UI error toast when I enter the wrong password at login.","As a user, I want a UI error toast when I enter the wrong password at login.
+
+Roadmap ID: US-3.4
+Epic: Epic 3: Authentication & Authorization
+Milestone: M2 - Product shell
+Repository status: Done",Epic 3: Authentication & Authorization,Done,datachain;M2Productshell,Medium
+Story,"US-3.5 As a user, I want a UI error toast when I try to register with an email that is already in use.","As a user, I want a UI error toast when I try to register with an email that is already in use.
+
+Roadmap ID: US-3.5
+Epic: Epic 3: Authentication & Authorization
+Milestone: M2 - Product shell
+Repository status: Done",Epic 3: Authentication & Authorization,Done,datachain;M2Productshell,Medium
+Story,"US-3.6 As the system, I need to detect JWT expiration on the client before protected requests fail silently.","As the system, I need to detect JWT expiration on the client before protected requests fail silently.
+
+Roadmap ID: US-3.6
+Epic: Epic 3: Authentication & Authorization
+Milestone: M2 - Product shell
+Repository status: Done",Epic 3: Authentication & Authorization,Done,datachain;M2Productshell,Medium
+Story,"US-3.7 As the system, I need to log the user out and redirect to login when the session is expired or invalid.","As the system, I need to log the user out and redirect to login when the session is expired or invalid.
+
+Roadmap ID: US-3.7
+Epic: Epic 3: Authentication & Authorization
+Milestone: M2 - Product shell
+Repository status: Done",Epic 3: Authentication & Authorization,Done,datachain;M2Productshell,Medium
+Story,"US-3.8 As a user, I want to log out securely and clear my session.","As a user, I want to log out securely and clear my session.
+
+Roadmap ID: US-3.8
+Epic: Epic 3: Authentication & Authorization
+Milestone: M2 - Product shell
+Repository status: Done",Epic 3: Authentication & Authorization,Done,datachain;M2Productshell,Medium
+Story,"US-4.1 As a user, I want a UI form to add a new camera (Name, IP/URL, Location).","As a user, I want a UI form to add a new camera (Name, IP/URL, Location).
+
+Roadmap ID: US-4.1
+Epic: Epic 4: Camera Management (CRUD)
+Milestone: M2 - Product shell
+Repository status: Done",Epic 4: Camera Management (CRUD),Done,datachain;M2Productshell,Medium
+Story,"US-4.2 As the backend, I need to validate camera name, IP/URL, and location before saving.","As the backend, I need to validate camera name, IP/URL, and location before saving.
+
+Roadmap ID: US-4.2
+Epic: Epic 4: Camera Management (CRUD)
+Milestone: M2 - Product shell
+Repository status: Done",Epic 4: Camera Management (CRUD),Done,datachain;M2Productshell,Medium
+Story,"US-4.3 As the backend, I need owner-scoped camera CRUD endpoints backed by PostgreSQL.","As the backend, I need owner-scoped camera CRUD endpoints backed by PostgreSQL.
+
+Roadmap ID: US-4.3
+Epic: Epic 4: Camera Management (CRUD)
+Milestone: M2 - Product shell
+Repository status: Done",Epic 4: Camera Management (CRUD),Done,datachain;M2Productshell,Medium
+Story,"US-4.4 As a user, I want to view a dashboard grid of all my registered cameras.","As a user, I want to view a dashboard grid of all my registered cameras.
+
+Roadmap ID: US-4.4
+Epic: Epic 4: Camera Management (CRUD)
+Milestone: M2 - Product shell
+Repository status: Done",Epic 4: Camera Management (CRUD),Done,datachain;M2Productshell,Medium
+Story,"US-4.5 As a user, I want to edit the details of an existing camera.","As a user, I want to edit the details of an existing camera.
+
+Roadmap ID: US-4.5
+Epic: Epic 4: Camera Management (CRUD)
+Milestone: M2 - Product shell
+Repository status: Done",Epic 4: Camera Management (CRUD),Done,datachain;M2Productshell,Medium
+Story,"US-4.6 As a user, I want to delete a camera and remove it from my dashboard.","As a user, I want to delete a camera and remove it from my dashboard.
+
+Roadmap ID: US-4.6
+Epic: Epic 4: Camera Management (CRUD)
+Milestone: M2 - Product shell
+Repository status: Done",Epic 4: Camera Management (CRUD),Done,datachain;M2Productshell,Medium
+Story,"US-4.7 As the backend, I need to probe camera reachability so Online/Offline status can be determined.","As the backend, I need to probe camera reachability so Online/Offline status can be determined.
+
+Roadmap ID: US-4.7
+Epic: Epic 4: Camera Management (CRUD)
+Milestone: M2 - Product shell
+Repository status: Done",Epic 4: Camera Management (CRUD),Done,datachain;M2Productshell,Medium
+Story,"US-4.8 As a user, I want to see an Online/Offline status badge on each camera card.","As a user, I want to see an Online/Offline status badge on each camera card.
+
+Roadmap ID: US-4.8
+Epic: Epic 4: Camera Management (CRUD)
+Milestone: M2 - Product shell
+Repository status: Done",Epic 4: Camera Management (CRUD),Done,datachain;M2Productshell,Medium
+Story,"US-4.9 As a user, I want pagination on my camera list when I have more than 10 cameras.","As a user, I want pagination on my camera list when I have more than 10 cameras.
+
+Roadmap ID: US-4.9
+Epic: Epic 4: Camera Management (CRUD)
+Milestone: M2 - Product shell
+Repository status: Done",Epic 4: Camera Management (CRUD),Done,datachain;M2Productshell,Medium
+Story,"US-5.1 As a developer, I want to simulate a continuous CCTV feed from a local `.mp4` so I can test the pipeline without real RTSP hardware.","As a developer, I want to simulate a continuous CCTV feed from a local `.mp4` so I can test the pipeline without real RTSP hardware.
+
+Roadmap ID: US-5.1
+Epic: Epic 5: Video Processing Pipeline
+Milestone: M3 - Pipeline
+Repository status: Done",Epic 5: Video Processing Pipeline,Done,datachain;M3Pipeline,Medium
+Story,"US-5.2 As the backend, I need to use FFmpeg to chunk the video stream into exact 1-minute `.mp4` segments.","As the backend, I need to use FFmpeg to chunk the video stream into exact 1-minute `.mp4` segments.
+
+Roadmap ID: US-5.2
+Epic: Epic 5: Video Processing Pipeline
+Milestone: M3 - Pipeline
+Repository status: Done",Epic 5: Video Processing Pipeline,Done,datachain;M3Pipeline,Medium
+Story,"US-5.3 As the backend, I need to save the 1-minute chunks to a local `temp/` directory.","As the backend, I need to save the 1-minute chunks to a local `temp/` directory.
+
+Roadmap ID: US-5.3
+Epic: Epic 5: Video Processing Pipeline
+Milestone: M3 - Pipeline
+Repository status: Done",Epic 5: Video Processing Pipeline,Done,datachain;M3Pipeline,Medium
+Story,"US-5.4 As the system, I need to delete processed temp chunks so local disk does not fill up.","As the system, I need to delete processed temp chunks so local disk does not fill up.
+
+Roadmap ID: US-5.4
+Epic: Epic 5: Video Processing Pipeline
+Milestone: M3 - Pipeline
+Repository status: Done",Epic 5: Video Processing Pipeline,Done,datachain;M3Pipeline,Medium
+Story,"US-5.5 As the system, I need to gracefully restart the FFmpeg process if the simulated camera feed crashes.","As the system, I need to gracefully restart the FFmpeg process if the simulated camera feed crashes.
+
+Roadmap ID: US-5.5
+Epic: Epic 5: Video Processing Pipeline
+Milestone: M3 - Pipeline
+Repository status: Done",Epic 5: Video Processing Pipeline,Done,datachain;M3Pipeline,Medium
+Story,"US-6.1 As the backend, I need the Pinata IPFS SDK integrated so video chunks can be uploaded to decentralized storage.","As the backend, I need the Pinata IPFS SDK integrated so video chunks can be uploaded to decentralized storage.
+
+Roadmap ID: US-6.1
+Epic: Epic 6: Web3 & Decentralized Storage
+Milestone: M3 - Pipeline
+Repository status: To Do",Epic 6: Web3 & Decentralized Storage,To Do,datachain;M3Pipeline,Medium
+Story,"US-6.2 As the backend, I need to upload each 1-minute video chunk to IPFS and retrieve the cryptographic CID.","As the backend, I need to upload each 1-minute video chunk to IPFS and retrieve the cryptographic CID.
+
+Roadmap ID: US-6.2
+Epic: Epic 6: Web3 & Decentralized Storage
+Milestone: M3 - Pipeline
+Repository status: To Do",Epic 6: Web3 & Decentralized Storage,To Do,datachain;M3Pipeline,Medium
+Story,"US-6.3 As the backend, I need retry logic when IPFS upload fails due to network timeout.","As the backend, I need retry logic when IPFS upload fails due to network timeout.
+
+Roadmap ID: US-6.3
+Epic: Epic 6: Web3 & Decentralized Storage
+Milestone: M3 - Pipeline
+Repository status: To Do",Epic 6: Web3 & Decentralized Storage,To Do,datachain;M3Pipeline,Medium
+Story,"US-6.4 As the system, I need a smart contract that maps camera video records to anchored IPFS CIDs so integrity can be verified on-chain.","As the system, I need a smart contract that maps camera video records to anchored IPFS CIDs so integrity can be verified on-chain.
+
+Roadmap ID: US-6.4
+Epic: Epic 6: Web3 & Decentralized Storage
+Milestone: M3 - Pipeline
+Repository status: To Do",Epic 6: Web3 & Decentralized Storage,To Do,datachain;M3Pipeline,Medium
+Story,"US-6.5 As a developer, I want a Hardhat deployment script for the Datachain contract.","As a developer, I want a Hardhat deployment script for the Datachain contract.
+
+Roadmap ID: US-6.5
+Epic: Epic 6: Web3 & Decentralized Storage
+Milestone: M3 - Pipeline
+Repository status: To Do",Epic 6: Web3 & Decentralized Storage,To Do,datachain;M3Pipeline,Medium
+Story,"US-6.6 As a developer, I want the contract deployed to Polygon Amoy testnet so the app can use a live address.","As a developer, I want the contract deployed to Polygon Amoy testnet so the app can use a live address.
+
+Roadmap ID: US-6.6
+Epic: Epic 6: Web3 & Decentralized Storage
+Milestone: M3 - Pipeline
+Repository status: To Do",Epic 6: Web3 & Decentralized Storage,To Do,datachain;M3Pipeline,Medium
+Story,"US-6.7 As the backend, I need to use Web3.py to send a transaction anchoring the IPFS CID to the smart contract.","As the backend, I need to use Web3.py to send a transaction anchoring the IPFS CID to the smart contract.
+
+Roadmap ID: US-6.7
+Epic: Epic 6: Web3 & Decentralized Storage
+Milestone: M3 - Pipeline
+Repository status: To Do",Epic 6: Web3 & Decentralized Storage,To Do,datachain;M3Pipeline,Medium
+Story,"US-6.8 As the backend, I need to handle Web3.py RPC timeout errors gracefully.","As the backend, I need to handle Web3.py RPC timeout errors gracefully.
+
+Roadmap ID: US-6.8
+Epic: Epic 6: Web3 & Decentralized Storage
+Milestone: M3 - Pipeline
+Repository status: To Do",Epic 6: Web3 & Decentralized Storage,To Do,datachain;M3Pipeline,Medium
+Story,"US-6.9 As the backend, I need to handle Web3.py gas failures gracefully.","As the backend, I need to handle Web3.py gas failures gracefully.
+
+Roadmap ID: US-6.9
+Epic: Epic 6: Web3 & Decentralized Storage
+Milestone: M3 - Pipeline
+Repository status: To Do",Epic 6: Web3 & Decentralized Storage,To Do,datachain;M3Pipeline,Medium
+Story,"US-6.10 As the backend, I need to save a video record with CameraID, Timestamp, and CID after a successful IPFS upload.","As the backend, I need to save a video record with CameraID, Timestamp, and CID after a successful IPFS upload.
+
+Roadmap ID: US-6.10
+Epic: Epic 6: Web3 & Decentralized Storage
+Milestone: M3 - Pipeline
+Repository status: To Do",Epic 6: Web3 & Decentralized Storage,To Do,datachain;M3Pipeline,Medium
+Story,"US-6.11 As the backend, I need to update the video record with the TxHash after a successful on-chain anchor.","As the backend, I need to update the video record with the TxHash after a successful on-chain anchor.
+
+Roadmap ID: US-6.11
+Epic: Epic 6: Web3 & Decentralized Storage
+Milestone: M3 - Pipeline
+Repository status: To Do",Epic 6: Web3 & Decentralized Storage,To Do,datachain;M3Pipeline,Medium
+Story,"US-7.1 As a user, I want a ""My Videos"" page with a Google Drive–style layout to browse my footage.","As a user, I want a ""My Videos"" page with a Google Drive–style layout to browse my footage.
+
+Roadmap ID: US-7.1
+Epic: Epic 7: Video Dashboard & Retrieval
+Milestone: M4 - User value
+Repository status: To Do",Epic 7: Video Dashboard & Retrieval,To Do,datachain;M4Uservalue,Medium
+Story,"US-7.2 As the backend, I need an API endpoint that lists my video records for the authenticated user.","As the backend, I need an API endpoint that lists my video records for the authenticated user.
+
+Roadmap ID: US-7.2
+Epic: Epic 7: Video Dashboard & Retrieval
+Milestone: M4 - User value
+Repository status: To Do",Epic 7: Video Dashboard & Retrieval,To Do,datachain;M4Uservalue,Medium
+Story,"US-7.3 As the backend, I need an API endpoint that filters video records by date range.","As the backend, I need an API endpoint that filters video records by date range.
+
+Roadmap ID: US-7.3
+Epic: Epic 7: Video Dashboard & Retrieval
+Milestone: M4 - User value
+Repository status: To Do",Epic 7: Video Dashboard & Retrieval,To Do,datachain;M4Uservalue,Medium
+Story,"US-7.4 As the backend, I need an API endpoint that filters video records by camera.","As the backend, I need an API endpoint that filters video records by camera.
+
+Roadmap ID: US-7.4
+Epic: Epic 7: Video Dashboard & Retrieval
+Milestone: M4 - User value
+Repository status: To Do",Epic 7: Video Dashboard & Retrieval,To Do,datachain;M4Uservalue,Medium
+Story,"US-7.5 As the backend, I need paginated video record responses so large libraries stay performant.","As the backend, I need paginated video record responses so large libraries stay performant.
+
+Roadmap ID: US-7.5
+Epic: Epic 7: Video Dashboard & Retrieval
+Milestone: M4 - User value
+Repository status: To Do",Epic 7: Video Dashboard & Retrieval,To Do,datachain;M4Uservalue,Medium
+Story,"US-7.6 As a user, I want to filter my videos by a specific date range on the dashboard.","As a user, I want to filter my videos by a specific date range on the dashboard.
+
+Roadmap ID: US-7.6
+Epic: Epic 7: Video Dashboard & Retrieval
+Milestone: M4 - User value
+Repository status: To Do",Epic 7: Video Dashboard & Retrieval,To Do,datachain;M4Uservalue,Medium
+Story,"US-7.7 As a user, I want to filter my videos by a specific camera name on the dashboard.","As a user, I want to filter my videos by a specific camera name on the dashboard.
+
+Roadmap ID: US-7.7
+Epic: Epic 7: Video Dashboard & Retrieval
+Milestone: M4 - User value
+Repository status: To Do",Epic 7: Video Dashboard & Retrieval,To Do,datachain;M4Uservalue,Medium
+Story,"US-7.8 As a user, I want pagination on the video dashboard so the browser does not crash loading hundreds of videos.","As a user, I want pagination on the video dashboard so the browser does not crash loading hundreds of videos.
+
+Roadmap ID: US-7.8
+Epic: Epic 7: Video Dashboard & Retrieval
+Milestone: M4 - User value
+Repository status: To Do",Epic 7: Video Dashboard & Retrieval,To Do,datachain;M4Uservalue,Medium
+Story,"US-7.9 As a user, I want a loading skeleton UI while videos are being fetched from the database.","As a user, I want a loading skeleton UI while videos are being fetched from the database.
+
+Roadmap ID: US-7.9
+Epic: Epic 7: Video Dashboard & Retrieval
+Milestone: M4 - User value
+Repository status: To Do",Epic 7: Video Dashboard & Retrieval,To Do,datachain;M4Uservalue,Medium
+Story,"US-7.10 As a user, I want to click a video card and have it open a video player modal.","As a user, I want to click a video card and have it open a video player modal.
+
+Roadmap ID: US-7.10
+Epic: Epic 7: Video Dashboard & Retrieval
+Milestone: M4 - User value
+Repository status: To Do",Epic 7: Video Dashboard & Retrieval,To Do,datachain;M4Uservalue,Medium
+Story,"US-7.11 As a user, I want the video player to stream the video directly from an IPFS gateway using the CID.","As a user, I want the video player to stream the video directly from an IPFS gateway using the CID.
+
+Roadmap ID: US-7.11
+Epic: Epic 7: Video Dashboard & Retrieval
+Milestone: M4 - User value
+Repository status: To Do",Epic 7: Video Dashboard & Retrieval,To Do,datachain;M4Uservalue,Medium
+Story,"US-8.1 As a user, I want a ""Verify Integrity"" button next to every video in my dashboard.","As a user, I want a ""Verify Integrity"" button next to every video in my dashboard.
+
+Roadmap ID: US-8.1
+Epic: Epic 8: Cryptographic Verification (Core Feature)
+Milestone: M4 - User value
+Repository status: To Do",Epic 8: Cryptographic Verification (Core Feature),To Do,datachain;M4Uservalue,Medium
+Story,"US-8.2 As the frontend, I need to connect to the deployed Polygon contract using ethers.js.","As the frontend, I need to connect to the deployed Polygon contract using ethers.js.
+
+Roadmap ID: US-8.2
+Epic: Epic 8: Cryptographic Verification (Core Feature)
+Milestone: M4 - User value
+Repository status: To Do",Epic 8: Cryptographic Verification (Core Feature),To Do,datachain;M4Uservalue,Medium
+Story,"US-8.3 As the frontend, I need to read the anchored CID from the smart contract for the selected video.","As the frontend, I need to read the anchored CID from the smart contract for the selected video.
+
+Roadmap ID: US-8.3
+Epic: Epic 8: Cryptographic Verification (Core Feature)
+Milestone: M4 - User value
+Repository status: To Do",Epic 8: Cryptographic Verification (Core Feature),To Do,datachain;M4Uservalue,Medium
+Story,"US-8.4 As a user, I want to see a visual green checkmark / 100% Verified badge when the blockchain CID matches the database CID.","As a user, I want to see a visual green checkmark / 100% Verified badge when the blockchain CID matches the database CID.
+
+Roadmap ID: US-8.4
+Epic: Epic 8: Cryptographic Verification (Core Feature)
+Milestone: M4 - User value
+Repository status: To Do",Epic 8: Cryptographic Verification (Core Feature),To Do,datachain;M4Uservalue,Medium
+Story,"US-8.5 As a user, I want to see a visual red warning / Tampered badge when the CIDs do not match.","As a user, I want to see a visual red warning / Tampered badge when the CIDs do not match.
+
+Roadmap ID: US-8.5
+Epic: Epic 8: Cryptographic Verification (Core Feature)
+Milestone: M4 - User value
+Repository status: To Do",Epic 8: Cryptographic Verification (Core Feature),To Do,datachain;M4Uservalue,Medium
+Story,"US-8.6 As a user, I want to click the transaction hash in the UI and be redirected to Polygonscan to view the blockchain ledger proof.","As a user, I want to click the transaction hash in the UI and be redirected to Polygonscan to view the blockchain ledger proof.
+
+Roadmap ID: US-8.6
+Epic: Epic 8: Cryptographic Verification (Core Feature)
+Milestone: M4 - User value
+Repository status: To Do",Epic 8: Cryptographic Verification (Core Feature),To Do,datachain;M4Uservalue,Medium
+Story,"US-9.1 As a developer, I want automated contract tests so anchored metadata is stored correctly on-chain.","As a developer, I want automated contract tests so anchored metadata is stored correctly on-chain.
+
+Roadmap ID: US-9.1
+Epic: Epic 9: Testing & Quality Assurance
+Milestone: M5 - Hardening
+Repository status: To Do",Epic 9: Testing & Quality Assurance,To Do,datachain;M5Hardening,Medium
+Story,"US-9.2 As a developer, I want API tests for user registration so the register endpoint stays correct.","As a developer, I want API tests for user registration so the register endpoint stays correct.
+
+Roadmap ID: US-9.2
+Epic: Epic 9: Testing & Quality Assurance
+Milestone: M5 - Hardening
+Repository status: To Do",Epic 9: Testing & Quality Assurance,To Do,datachain;M5Hardening,Medium
+Story,"US-9.3 As a developer, I want API tests for user login so the login endpoint stays correct.","As a developer, I want API tests for user login so the login endpoint stays correct.
+
+Roadmap ID: US-9.3
+Epic: Epic 9: Testing & Quality Assurance
+Milestone: M5 - Hardening
+Repository status: To Do",Epic 9: Testing & Quality Assurance,To Do,datachain;M5Hardening,Medium
+Story,"US-9.4 As a developer, I want API tests for camera CRUD operations so camera management stays correct.","As a developer, I want API tests for camera CRUD operations so camera management stays correct.
+
+Roadmap ID: US-9.4
+Epic: Epic 9: Testing & Quality Assurance
+Milestone: M5 - Hardening
+Repository status: To Do",Epic 9: Testing & Quality Assurance,To Do,datachain;M5Hardening,Medium
+Story,"US-9.5 As a developer, I want an integration test that verifies IPFS upload returns a CID for a chunk.","As a developer, I want an integration test that verifies IPFS upload returns a CID for a chunk.
+
+Roadmap ID: US-9.5
+Epic: Epic 9: Testing & Quality Assurance
+Milestone: M5 - Hardening
+Repository status: To Do",Epic 9: Testing & Quality Assurance,To Do,datachain;M5Hardening,Medium
+Story,"US-9.6 As a developer, I want an integration test that verifies blockchain anchor and database save after upload.","As a developer, I want an integration test that verifies blockchain anchor and database save after upload.
+
+Roadmap ID: US-9.6
+Epic: Epic 9: Testing & Quality Assurance
+Milestone: M5 - Hardening
+Repository status: To Do",Epic 9: Testing & Quality Assurance,To Do,datachain;M5Hardening,Medium
+Story,"US-10.1 As a project author, I want a literature review chapter on traditional IoT vulnerabilities vs. blockchain immutability so the project is grounded in research.","As a project author, I want a literature review chapter on traditional IoT vulnerabilities vs. blockchain immutability so the project is grounded in research.
+
+Roadmap ID: US-10.1
+Epic: Epic 10: Academic Deliverables (Project Book)
+Milestone: M6 - Academic
+Repository status: To Do",Epic 10: Academic Deliverables (Project Book),To Do,datachain;M6Academic,Medium
+Story,"US-10.2 As a project author, I want a methodology chapter describing how the system was built and evaluated.","As a project author, I want a methodology chapter describing how the system was built and evaluated.
+
+Roadmap ID: US-10.2
+Epic: Epic 10: Academic Deliverables (Project Book)
+Milestone: M6 - Academic
+Repository status: To Do",Epic 10: Academic Deliverables (Project Book),To Do,datachain;M6Academic,Medium
+Story,"US-10.3 As a project author, I want an architecture chapter explaining the hybrid Web2/Web3 data flow.","As a project author, I want an architecture chapter explaining the hybrid Web2/Web3 data flow.
+
+Roadmap ID: US-10.3
+Epic: Epic 10: Academic Deliverables (Project Book)
+Milestone: M6 - Academic
+Repository status: To Do",Epic 10: Academic Deliverables (Project Book),To Do,datachain;M6Academic,Medium
+Story,"US-10.4 As a project author, I want UML use case diagrams for user and system personas so stakeholders can see who interacts with the platform.","As a project author, I want UML use case diagrams for user and system personas so stakeholders can see who interacts with the platform.
+
+Roadmap ID: US-10.4
+Epic: Epic 10: Academic Deliverables (Project Book)
+Milestone: M6 - Academic
+Repository status: To Do",Epic 10: Academic Deliverables (Project Book),To Do,datachain;M6Academic,Medium
+Story,"US-10.5 As a project author, I want UML class diagrams mapping PostgreSQL models and smart contract structs so the data model is documented.","As a project author, I want UML class diagrams mapping PostgreSQL models and smart contract structs so the data model is documented.
+
+Roadmap ID: US-10.5
+Epic: Epic 10: Academic Deliverables (Project Book)
+Milestone: M6 - Academic
+Repository status: To Do",Epic 10: Academic Deliverables (Project Book),To Do,datachain;M6Academic,Medium
+Story,"US-10.6 As a project author, I want a UML sequence diagram showing the step-by-step cryptographic verification process so the integrity flow is clear.","As a project author, I want a UML sequence diagram showing the step-by-step cryptographic verification process so the integrity flow is clear.
+
+Roadmap ID: US-10.6
+Epic: Epic 10: Academic Deliverables (Project Book)
+Milestone: M6 - Academic
+Repository status: To Do",Epic 10: Academic Deliverables (Project Book),To Do,datachain;M6Academic,Medium
+Story,"US-10.7 As a project author, I want a risk management document identifying risks such as private key loss and RPC node failure so mitigations are explicit.","As a project author, I want a risk management document identifying risks such as private key loss and RPC node failure so mitigations are explicit.
+
+Roadmap ID: US-10.7
+Epic: Epic 10: Academic Deliverables (Project Book)
+Milestone: M6 - Academic
+Repository status: To Do",Epic 10: Academic Deliverables (Project Book),To Do,datachain;M6Academic,Medium

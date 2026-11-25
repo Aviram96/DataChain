@@ -2,6 +2,8 @@
 
 Solidity sources and Hardhat tooling for on-chain anchoring (`ROADMAP.md`).
 
+`Datachain.sol` records one-minute segment metadata (camera id, start/end, IPFS CID, SHA-256) so it can be read back later. The deployer address is the only writer.
+
 ## Stack
 
 - **Hardhat 3** with **`@nomicfoundation/hardhat-toolbox-viem`** (Viem + **Node.js `node:test`** for TypeScript tests).
@@ -23,6 +25,46 @@ npm test
 
 Equivalent: `npx hardhat compile`, `npx hardhat test`.
 
+## Deploy to Polygon Amoy (Slice D / CP-D.P4)
+
+**Testnet only** (chain id **80002**). Do not use a mainnet key. Fund the deployer with Amoy POL from a faucet.
+
+1. Copy `.env.example` to `.env` (gitignored) and set `AMOY_PRIVATE_KEY`. Optionally set `AMOY_RPC_URL` to a provider if the public RPC is slow.
+2. Load those variables in your shell, or use Hardhat’s encrypted keystore (`AMOY_RPC_URL`, `AMOY_PRIVATE_KEY` as config variables).
+3. From `contracts/`:
+
+```bash
+npm run deploy:amoy
+```
+
+The script refuses any network other than `polygonAmoy` or `localhost`. On Amoy it checks chain id **80002**, prints the contract address, and prints an [Amoy Polygonscan](https://amoy.polygonscan.com/) link. Save the address for the backend (`DATACHAIN_CONTRACT_ADDRESS`). This repo does not send a deploy transaction until you run that command.
+
+PowerShell example:
+
+```powershell
+$env:AMOY_RPC_URL = "https://rpc-amoy.polygon.technology"
+$env:AMOY_PRIVATE_KEY = "0xYOUR_TESTNET_KEY"
+npm run deploy:amoy
+```
+
+## Local Hardhat node (zero-cost proof of concept)
+
+Hardhat 3 already defines a `localhost` network at `http://127.0.0.1:8545` (chain id **31337**). No Amoy RPC or test POL is used.
+
+From `contracts/`, in one terminal:
+
+```bash
+npx hardhat node
+```
+
+In a second terminal:
+
+```bash
+npm run deploy:local
+```
+
+The script checks chain id **31337** and prints the contract address, deployer, and owner. The deployer is the owner. The node log is the transaction receipt; Polygonscan will not list it. Stopping the node wipes the chain.
+
 ## Dependency audits
 
 After installing or bumping packages, run:
@@ -39,4 +81,6 @@ Avoid **`npm audit fix --force`** unless you accept breaking upgrades across the
 | ---- | ------- |
 | `contracts/` | `.sol` sources (Hardhat default inner folder) |
 | `test/` | TypeScript tests (`node:test` + Viem) |
-| `hardhat.config.ts` | Compiler and plugin config |
+| `scripts/deploy.ts` | Polygon Amoy or local Hardhat deploy |
+| `hardhat.config.ts` | Compiler, `polygonAmoy` network (`localhost` is built in) |
+| `.env.example` | `AMOY_RPC_URL` / `AMOY_PRIVATE_KEY` placeholders |
